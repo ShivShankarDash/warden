@@ -205,7 +205,7 @@ const server = Bun.serve({
     "/review/:id": {
       POST: async (req) => {
         const { id } = req.params as { id: string };
-        const body = (await req.json()) as { decision: "attack" | "safe"; note?: string };
+        const body = (await req.json()) as { decision: "attack" | "safe" | "dismiss"; note?: string };
 
         const item = getReview(id);
         if (!item) return Response.json({ error: "unknown review item" }, { status: 404 });
@@ -233,6 +233,8 @@ const server = Bun.serve({
             agentId: item.agentId,
             sourceId: item.sourceId ?? undefined,
           });
+        } else if (body.decision === "dismiss") {
+          /* no-op: dismissed without learning */
         }
 
         return Response.json({ ok: true, decision: body.decision, learned });
