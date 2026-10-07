@@ -801,6 +801,10 @@ const JAILBREAK_TRIGGERS: RegExp[] = [
   /\baus\s+(der|ihrer)\s+(rolle|figur)\b/i,
   /\bvergiss\s+(nun\s+)?(alles|alle)\b/i,
   /\bignoriere?\s+(die\s+|alle\s+)?anweisungen\b/i,
+  // German task-switching triggers — ensures judge referral for directConfidence rules
+  /\b(jetzt|nun)\s+habe\s+ich.{0,20}(neue|weitere)/i,
+  /\bbrauche.{0,20}hilfe\s+bei\s+einer/i,
+  /\b(großartig|hervorragend|ausgezeichnet|fantastisch).{0,40}(aufgabe|anweisung)/i,
 
   // ── New English triggers — ensure judge referral for all directConfidence rules ──
   /\blet'?s\s+play\s+a\s+game\b/i,
@@ -815,6 +819,8 @@ const JAILBREAK_TRIGGERS: RegExp[] = [
   /\bstay\s+(fully\s+)?in\s+(their|the|your)\s+(characters?|roles?)\b/i,
   /\b(never|do\s+not|don'?t)\s+break\s+characters?\b/i,
   /\banswer\s+by\s+your\s+own\s+knowledge\b/i,
+  // "no restrictions/policies/guidelines" — trigger for the directConfidence: 0.55 rule
+  /\bno\s+(content\s+)?(restrictions?|policies|guidelines?|safety\s+guidelines?)\b/i,
 ];
 
 export function suspectsJailbreak(text: string): boolean {

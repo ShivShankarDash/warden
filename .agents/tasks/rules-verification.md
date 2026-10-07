@@ -14,9 +14,13 @@ Added 47 new regex patterns to `src/detect/rules.ts` across these groups:
 8. **Conversational jailbreak** (9 patterns): game framing, hypothetical scenarios, educational framing, security testing, restriction removal, fiction framing, unrestricted version
 9. **Tool abuse** (1 pattern): `with/using [tool_name] tool`
 
-Added 25 new `JAILBREAK_TRIGGERS` entries (German equivalents and English patterns for all `directConfidence` rules).
+Added 29 new `JAILBREAK_TRIGGERS` entries (German equivalents and English patterns for all `directConfidence` rules). This includes the 4 triggers added in the review fix iteration:
+- `/\b(jetzt|nun)\s+habe\s+ich.{0,20}(neue|weitere)/i` — German "now I have a new challenge"
+- `/\bbrauche.{0,20}hilfe\s+bei\s+einer/i` — German "I need help with another task"
+- `/\b(großartig|hervorragend|ausgezeichnet|fantastisch).{0,40}(aufgabe|anweisung)/i` — German compliment + new task
+- `/\bno\s+(content\s+)?(restrictions?|policies|guidelines?|safety\s+guidelines?)\b/i` — "no restrictions"
 
-Added 63 new tests in `tests/rules.test.ts` across 14 new `describe` blocks.
+Added 66 new tests in `tests/rules.test.ts` across 14 new `describe` blocks (including 3 tests for the review-fix triggers).
 
 ## Verification Commands and Results
 
@@ -24,12 +28,12 @@ Added 63 new tests in `tests/rules.test.ts` across 14 new `describe` blocks.
 
 ```
 $ cd /Users/shivshankardash/warden && bun test tests/rules.test.ts
-73 pass, 0 fail, 107 expect() calls
+74 pass, 0 fail, 111 expect() calls
 ```
 
 ```
 $ cd /Users/shivshankardash/warden && bun test
-229 pass, 0 fail, 1432 expect() calls (across 15 files)
+230 pass, 0 fail, 1436 expect() calls (across 15 files)
 ```
 
 ### Eval Results
