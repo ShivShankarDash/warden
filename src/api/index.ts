@@ -11,6 +11,7 @@ import { memoryStats, recentMemories, recentPromotions } from "../store/memory.t
 import type { ToolCallCheck } from "../types.ts";
 import { analytics, decidedBy, isRange, recentScans } from "./analytics.ts";
 import { coverageSummary, coverageGaps } from "../store/coverage.ts";
+import { memoryHealth } from "../store/lifecycle.ts";
 import dashboard from "../../dashboard/index.html";
 
 const PORT = Number(process.env.PORT ?? 3000);
@@ -276,6 +277,13 @@ const server = Bun.serve({
           gaps: coverageGaps(agentId),
           stats: coverageSummary(agentId),
         });
+      },
+    },
+
+    "/metrics/memory-health": {
+      GET: (req) => {
+        const agentId = new URL(req.url).searchParams.get("agentId") ?? undefined;
+        return Response.json(memoryHealth(agentId));
       },
     },
 

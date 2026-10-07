@@ -74,7 +74,9 @@ export function getDb(): Database {
       agent_id TEXT NOT NULL DEFAULT 'default',
       valid_from INTEGER NOT NULL,
       valid_to INTEGER,
-      created_at INTEGER NOT NULL
+      created_at INTEGER NOT NULL,
+      match_count INTEGER NOT NULL DEFAULT 0,
+      last_matched_at INTEGER
     );
 
     CREATE INDEX IF NOT EXISTS idx_memory_active
@@ -133,6 +135,11 @@ export function getDb(): Database {
     CREATE INDEX IF NOT EXISTS idx_scan_created ON scan_results(created_at);
     CREATE INDEX IF NOT EXISTS idx_review_status ON review_queue(status);
   `);
+
+  // Migrate existing DBs that predate the match_count / last_matched_at columns.
+  try { _db.exec("ALTER TABLE memory ADD COLUMN match_count INTEGER NOT NULL DEFAULT 0"); } catch {}
+  try { _db.exec("ALTER TABLE memory ADD COLUMN last_matched_at INTEGER"); } catch {}
+
   return _db;
 }
 
