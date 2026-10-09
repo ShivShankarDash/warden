@@ -24,7 +24,10 @@ export interface IntelItem {
   isAttack: boolean;
   attackType?: string;
   source: string;
+  /** Timestamp of the item — use the upstream date, not Date.now(). */
   fetchedAt: number;
+  /** When false the processor skips seeding this item into memory. Defaults to true. */
+  seedable?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -76,32 +79,39 @@ function parseAntijection(raw: any): IntelItem[] {
     }));
 }
 
-/** Parser for JailbreakBench releases — body text from release objects. */
-function parseJailbreakBenchReleases(raw: any): IntelItem[] {
-  if (!Array.isArray(raw)) return [];
-  const now = Date.now();
-  return raw
-    .filter((r: any) => r?.body && typeof r.body === "string")
-    .map((r: any) => ({
-      text: r.body,
-      isAttack: true,
-      attackType: "multi_step_jailbreak",
-      source: "JailbreakBench/jailbreakbench",
-      fetchedAt: now,
-    }));
+/**
+ * Parser for JailbreakBench releases — currently disabled.
+ *
+ * Release bodies are changelogs and contributor lists, not jailbreak prompts.
+ * Seeding them as attack references would pollute similarity memory. A proper
+ * parser would fetch actual jailbreak artifacts from the repo's data files.
+ * Returns empty until that parser exists.
+ */
+function parseJailbreakBenchReleases(_raw: any): IntelItem[] {
+  // TODO: parse actual jailbreak artifacts from data files, not release notes.
+  return [];
 }
 
-/** Parser for BIPIA commits — commit messages are technique signals, not attacks. */
+/**
+ * Parser for BIPIA commits — commit messages are technique signals, not attacks.
+ *
+ * Uses the commit's author date as fetchedAt so the dedup filter in fetchGitHub
+ * works correctly. Items are marked seedable: false because commit messages like
+ * "Fix typo in README" are not representative of benign user prompts and would
+ * add noise to the safe-reference pool.
+ */
 function parseBIPIACommits(raw: any): IntelItem[] {
   if (!Array.isArray(raw)) return [];
-  const now = Date.now();
   return raw
     .filter((r: any) => r?.commit?.message && typeof r.commit.message === "string")
     .map((r: any) => ({
       text: r.commit.message,
       isAttack: false,
       source: "microsoft/BIPIA",
-      fetchedAt: now,
+      fetchedAt: r.commit?.author?.date
+        ? new Date(r.commit.author.date).getTime()
+        : Date.now(),
+      seedable: false,
     }));
 }
 
@@ -170,4 +180,12 @@ export function getEnabledSources(enabledIds?: string[]): IntelSource[] {
  */
 export function registerSource(source: IntelSource): void {
   customSources.push(source);
+}
+
+/**
+ * Removes all custom sources. Used by tests to prevent cross-test leaks from
+ * the module-level customSources array.
+ */
+export function clearCustomSources(): void {
+  customSources.length = 0;
 }

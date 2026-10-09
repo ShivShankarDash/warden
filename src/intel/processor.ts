@@ -79,6 +79,10 @@ export async function processItems(items: IntelItem[]): Promise<ProcessStats> {
 
   for (const item of items) {
     try {
+      // Skip items explicitly marked as not seedable (e.g. commit messages,
+      // release notes that aren't representative prompts).
+      if (item.seedable === false) continue;
+
       if (item.isAttack) {
         // Check if Warden already catches this
         const result = await scanViaApi(item.text);
