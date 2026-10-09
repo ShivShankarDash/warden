@@ -322,34 +322,26 @@ async function vetToolDescriptions(tools: Tool[], upstreamName: string): Promise
 export async function startGateway(config: GatewayConfig) {
   isQuiet = config.quiet ?? (process.env.WARDEN_QUIET === "1");
 
-  const entries = Object.entries(config.upstreams);
-  console.error(`[warden-gateway] starting with ${entries.length} upstream(s)`);
-
-  const connected = (
-    await Promise.all(entries.map(([name, spec]) => connectUpstream(name, spec)))
-  ).filter((u): u is Upstream => u !== null);
-
-  if (!connected.length) console.error("[warden-gateway] WARNING: no upstreams connected — host will see no tools");
-
-  // Vet each upstream's tools individually before registering — upstream name
-  // controls the whitelist, not individual tool names.
-  for (const u of connected) {
-    u.tools = await vetToolDescriptions(u.tools, u.name);
-  }
-  const exposed = registerTools(connected);
-
-  // Startup banner — replaces the old "ready — exposing ..." line.
-  const wardenUrl = process.env.WARDEN_URL ?? "http://localhost:3000";
-  logStartup(connected, exposed, wardenUrl);
-
+  // Connect to stdio IMMEDIATELY so the MCP host (Kiro/Claude) completes its
+  // handshake before models load. Without this, the 20-second model init
+  // causes a connection timeout on the host side.
   const server = new Server(
     { name: "warden", version: "0.1.0" },
     { capabilities: { tools: {} } }
   );
 
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: exposed }));
+  let exposed: Tool[] = [];
+  let ready = false;
+  let readyResolve: () => void;
+  const readyPromise = new Promise<void>((resolve) => { readyResolve = resolve; });
+
+  server.setRequestHandler(ListToolsRequestSchema, async () => {
+    if (!ready) await readyPromise;
+    return { tools: exposed };
+  });
 
   server.setRequestHandler(CallToolRequestSchema, async (req) => {
+    if (!ready) await readyPromise;
     const toolName = req.params.name;
     const upstream = routes.get(toolName);
     if (!upstream) {
@@ -477,6 +469,27 @@ export async function startGateway(config: GatewayConfig) {
   });
 
   await server.connect(new StdioServerTransport());
+  console.error(`[warden-gateway] MCP handshake complete — loading upstreams...`);
+
+  // Now load upstreams and vet tools (this takes 15-20 seconds on first run).
+  const entries = Object.entries(config.upstreams);
+  console.error(`[warden-gateway] starting with ${entries.length} upstream(s)`);
+
+  const connected = (
+    await Promise.all(entries.map(([name, spec]) => connectUpstream(name, spec)))
+  ).filter((u): u is Upstream => u !== null);
+
+  if (!connected.length) console.error("[warden-gateway] WARNING: no upstreams connected — host will see no tools");
+
+  for (const u of connected) {
+    u.tools = await vetToolDescriptions(u.tools, u.name);
+  }
+  exposed = registerTools(connected);
+  ready = true;
+  readyResolve!();
+
+  const wardenUrl = process.env.WARDEN_URL ?? "http://localhost:3000";
+  logStartup(connected, exposed, wardenUrl);
 
   return { server, upstreams: connected };
 }
