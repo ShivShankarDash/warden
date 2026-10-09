@@ -12,6 +12,7 @@
     "eval:robustness": "bun eval/robustness.ts",
     "redteam": "bun redteam/runner.ts",
     "redteam:watch": "bun redteam/scheduler.ts",
+    "selfplay": "bun redteam/selfplay.ts",
     "intel": "bun src/intel/agent.ts",
     "intel:watch": "bun src/intel/agent.ts --watch"
   },
