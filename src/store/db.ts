@@ -1,4 +1,5 @@
 import { Database } from "bun:sqlite";
+import type { Finding, ScanResult } from "../types.ts";
 
 const DB_PATH = process.env.DB_PATH ?? "./warden.db";
 
@@ -178,4 +179,43 @@ export function insertScanResult(result: {
     $trace: JSON.stringify(result.trace),
     $createdAt: result.createdAt,
   });
+}
+
+/** Look up a stored scan result by primary key. Returns null for unknown IDs. */
+export function getScanResult(id: string): {
+  id: string;
+  agentId: string;
+  sessionId: string | null;
+  source: string;
+  action: string;
+  riskScore: number;
+  findings: Finding[];
+  trace: ScanResult["trace"];
+  createdAt: number;
+} | null {
+  const row = getDb()
+    .query("SELECT * FROM scan_results WHERE id = ?")
+    .get(id) as {
+      id: string;
+      agent_id: string;
+      session_id: string | null;
+      source: string;
+      action: string;
+      risk_score: number;
+      findings: string;
+      trace: string;
+      created_at: number;
+    } | null;
+  if (!row) return null;
+  return {
+    id: row.id,
+    agentId: row.agent_id,
+    sessionId: row.session_id,
+    source: row.source,
+    action: row.action,
+    riskScore: row.risk_score,
+    findings: JSON.parse(row.findings) as Finding[],
+    trace: JSON.parse(row.trace) as ScanResult["trace"],
+    createdAt: row.created_at,
+  };
 }

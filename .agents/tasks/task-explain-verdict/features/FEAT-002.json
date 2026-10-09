@@ -1,0 +1,31 @@
+{
+  "id": "FEAT-002",
+  "type": "feat",
+  "description": "Wire the explainer into the HTTP API: inline explanation on POST /scan, new GET /explain/:scanId route, and explanation field on GET /review items. Depends on FEAT-001 (the explainVerdict function).",
+  "status": "completed",
+  "steps": [
+    "1. Add a getScanResult(id: string) function to /Users/shivshankardash/warden/src/store/db.ts that queries scan_results by primary key and returns a typed object with parsed JSON fields (findings, trace). Return type should be { id: string; agentId: string; sessionId: string | null; source: string; action: string; riskScore: number; findings: Finding[]; trace: ScanResult['trace']; createdAt: number } | null. Note: scan_results does NOT store content — only the review_queue does.",
+
+    "2. Modify the POST /scan handler in /Users/shivshankardash/warden/src/api/index.ts:\n   - Import explainVerdict from '../explain/verdict.ts'.\n   - After the scan completes, check if the caller requested an explanation: either query param ?explain=true (from new URL(req.url).searchParams.get('explain') === 'true') or body field 'explain' === true.\n   - If requested, call explainVerdict(result, body.content, { mode: 'fast', includeContent: false }) — fast mode by default for the scan response. Content is available here from body.content.\n   - Add the explanation as an 'explanation' field on the response JSON: return Response.json({ ...result, explanation }).\n   - If explain is not requested, return the result as before (no explanation field).",
+
+    "3. Add a new GET /explain/:scanId route in /Users/shivshankardash/warden/src/api/index.ts:\n   - Import getScanResult from '../store/db.ts'.\n   - Import getReputation from '../store/reputation.ts'.\n   - Look up the scan result by ID using getScanResult(id). Return 404 if not found.\n   - Try to find content: query review_queue for a row with scan_id = id (use getDb().query('SELECT content FROM review_queue WHERE scan_id = ?').get(id)). The content may not exist if the scan was ALLOW/BLOCK (not queued for review).\n   - Build the ScanResult object from the DB row (action as Action, findings already parsed by getScanResult).\n   - Look up reputation using the scan's agent_id and any source_id from the review item.\n   - Call explainVerdict(scanResult, content ?? '', { mode: 'rich', includeContent: !!content, reputation }) — rich mode for the detail view.\n   - Return Response.json({ scanId: id, explanation }).",
+
+    "4. Modify the GET /review handler in /Users/shivshankardash/warden/src/api/index.ts:\n   - After getting pendingReviews(agentId), iterate over the items and generate a fast-mode explanation for each.\n   - For each ReviewItem, construct a minimal ScanResult from its fields: { id: item.scanId, action: item.action, findings: item.findings, riskScore: item.riskScore, trace: [], createdAt: item.createdAt } as ScanResult (trace is empty since we don't store it on the review item, but the review_queue's parent scan_id links to scan_results — optionally look up the trace from scan_results using getScanResult).\n   - Call explainVerdict(scanResult, item.content, { mode: 'fast', includeContent: false }).\n   - Add the explanation as a field on each returned item: { ...item, explanation }.\n   - Return the enriched array. This is async now, so use Promise.all for the explanations.",
+
+    "5. Add API-level tests in /Users/shivshankardash/warden/tests/explain.test.ts (append to the test file created in FEAT-001) or create /Users/shivshankardash/warden/tests/explain-api.test.ts:\n   - Test that the getScanResult function returns null for unknown IDs and correctly parses findings/trace JSON for known IDs.\n   - Test that POST /scan with explain=true returns an explanation field in the response (requires running the server or testing the route handler directly — given the Bun.serve() pattern, prefer testing getScanResult and the explainer integration directly rather than HTTP-level tests)."
+  ],
+  "acceptance_criteria": [
+    "getScanResult(id) returns a properly typed result with parsed JSON fields, or null for unknown IDs",
+    "POST /scan with ?explain=true or body.explain=true returns an 'explanation' field in the response",
+    "POST /scan without explain flag returns no explanation field (backward compatible)",
+    "GET /explain/:scanId returns a rich explanation for known scans, 404 for unknown",
+    "GET /review items each have an 'explanation' field with a fast-mode explanation",
+    "All existing tests still pass: DB_PATH=./warden-test.db bun test"
+  ],
+  "verification": [
+    "DB_PATH=./warden-test.db bun test",
+    "DB_PATH=./warden-test.db bun test tests/explain.test.ts"
+  ],
+  "blocked_reason": null,
+  "findings": "Implemented all 5 steps: getScanResult(id) in db.ts returns parsed typed result or null. POST /scan supports ?explain=true and body.explain=true for inline fast-mode explanation. GET /explain/:scanId provides rich-mode explanation with content from review_queue and reputation context. GET /review enriches each item with a fast-mode explanation using trace from scan_results when available. 10 new tests in tests/explain-api.test.ts cover getScanResult, DB-round-trip explanations, review enrichment with and without parent scan, and explain flag logic. All 305 tests pass."
+}

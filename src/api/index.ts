@@ -1,5 +1,5 @@
 import { scan } from "../detect/orchestrator.ts";
-import { getDb, insertScanResult } from "../store/db.ts";
+import { getDb, insertScanResult, getScanResult } from "../store/db.ts";
 import { initWarden } from "../init.ts";
 import { getSession, resetSession } from "../detect/session.ts";
 import { scanOutput, generateCanary } from "../guard/output.ts";
@@ -8,10 +8,12 @@ import { recordTaint } from "../guard/taint.ts";
 import { enqueueReview, pendingReviews, getReview, markResolved } from "../store/review.ts";
 import { addReference, addSafeReference } from "../detect/similarity.ts";
 import { memoryStats, recentMemories, recentPromotions } from "../store/memory.ts";
-import type { ToolCallCheck } from "../types.ts";
+import type { ToolCallCheck, Action, ScanResult } from "../types.ts";
 import { analytics, decidedBy, isRange, recentScans } from "./analytics.ts";
 import { coverageSummary, coverageGaps } from "../store/coverage.ts";
 import { memoryHealth } from "../store/lifecycle.ts";
+import { explainVerdict } from "../explain/verdict.ts";
+import { getReputation } from "../store/reputation.ts";
 import dashboard from "../../dashboard/index.html";
 
 const PORT = Number(process.env.PORT ?? 3000);
@@ -119,6 +121,18 @@ const server = Bun.serve({
           })
         );
 
+        // Optional inline explanation when the caller requests it.
+        const wantExplain =
+          new URL(req.url).searchParams.get("explain") === "true" ||
+          body.explain === true;
+        if (wantExplain && typeof body.content === "string") {
+          const explanation = await explainVerdict(result, body.content, {
+            mode: "fast",
+            includeContent: false,
+          });
+          return Response.json({ ...result, explanation });
+        }
+
         return Response.json(result);
       },
     },
@@ -195,10 +209,75 @@ const server = Bun.serve({
       },
     },
 
+    "/explain/:scanId": {
+      GET: async (req) => {
+        const { scanId } = req.params as { scanId: string };
+        const row = getScanResult(scanId);
+        if (!row) return Response.json({ error: "unknown scan" }, { status: 404 });
+
+        // Content lives only in review_queue, not in scan_results.
+        const contentRow = getDb()
+          .query("SELECT content FROM review_queue WHERE scan_id = ?")
+          .get(scanId) as { content: string } | null;
+        const content = contentRow?.content ?? "";
+
+        // Build a ScanResult shape from the DB row.
+        const scanResult: ScanResult = {
+          id: row.id,
+          action: row.action as Action,
+          findings: row.findings,
+          riskScore: row.riskScore,
+          trace: row.trace,
+          createdAt: row.createdAt,
+        };
+
+        // Look up reputation for richer context.
+        const reviewRow = getDb()
+          .query("SELECT source_id FROM review_queue WHERE scan_id = ?")
+          .get(scanId) as { source_id: string | null } | null;
+        const sourceId = reviewRow?.source_id ?? null;
+        const reputation = sourceId
+          ? getReputation(sourceId, row.agentId)
+          : null;
+
+        const explanation = await explainVerdict(scanResult, content, {
+          mode: "rich",
+          includeContent: !!contentRow,
+          reputation,
+        });
+
+        return Response.json({ scanId, explanation });
+      },
+    },
+
     "/review": {
-      GET: (req) => {
+      GET: async (req) => {
         const agentId = new URL(req.url).searchParams.get("agentId") ?? undefined;
-        return Response.json(pendingReviews(agentId));
+        const items = pendingReviews(agentId);
+
+        // Enrich each review item with a fast-mode explanation.
+        const enriched = await Promise.all(
+          items.map(async (item) => {
+            // Reconstruct a ScanResult from the review item; optionally pull trace
+            // from the parent scan_results row.
+            const parent = getScanResult(item.scanId);
+            const scanResult: ScanResult = {
+              id: item.scanId,
+              action: item.action,
+              findings: item.findings,
+              riskScore: item.riskScore,
+              trace: parent?.trace ?? [],
+              createdAt: item.createdAt,
+            };
+            const explanation = await explainVerdict(scanResult, item.content, {
+              mode: "fast",
+              includeContent: false,
+            });
+            return { ...item, explanation };
+          }),
+        );
+
+        return Response.json(enriched);
       },
     },
 
