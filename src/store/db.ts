@@ -129,6 +129,15 @@ export function getDb(): Database {
 
     CREATE INDEX IF NOT EXISTS idx_coverage_agent ON coverage_stats(agent_id);
 
+    CREATE TABLE IF NOT EXISTS intel_sources (
+      source_id TEXT PRIMARY KEY,
+      last_fetched_at INTEGER,
+      last_row_count INTEGER,
+      items_fetched INTEGER NOT NULL DEFAULT 0,
+      errors INTEGER NOT NULL DEFAULT 0,
+      updated_at INTEGER NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_scan_agent ON scan_results(agent_id);
     CREATE INDEX IF NOT EXISTS idx_taint_session ON session_taint(session_id);
     CREATE INDEX IF NOT EXISTS idx_sessions_agent ON sessions(agent_id);

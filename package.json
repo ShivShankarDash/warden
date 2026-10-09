@@ -11,7 +11,9 @@
     "test:clean": "rm -f warden-test.db && DB_PATH=./warden-test.db bun test",
     "eval:robustness": "bun eval/robustness.ts",
     "redteam": "bun redteam/runner.ts",
-    "redteam:watch": "bun redteam/scheduler.ts"
+    "redteam:watch": "bun redteam/scheduler.ts",
+    "intel": "bun src/intel/agent.ts",
+    "intel:watch": "bun src/intel/agent.ts --watch"
   },
   "dependencies": {
     "@huggingface/transformers": "^3.5.0",
