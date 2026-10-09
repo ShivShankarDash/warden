@@ -6,7 +6,13 @@
  * the X-API-Key header. Comparison uses crypto.timingSafeEqual.
  */
 
-import { timingSafeEqual } from "node:crypto";
+import { timingSafeEqual, createHmac } from "node:crypto";
+
+/** HMAC-hash a value so all comparisons use fixed-length buffers,
+ *  eliminating the timing side-channel from key-length differences. */
+function hmacKey(value: string): Buffer {
+  return createHmac("sha256", "warden-auth").update(value).digest();
+}
 
 export function requireAuth(req: Request): Response | null {
   const raw = process.env.WARDEN_API_KEYS;
@@ -23,17 +29,14 @@ export function requireAuth(req: Request): Response | null {
     );
   }
 
-  const suppliedBuf = Buffer.from(supplied);
+  const suppliedHash = hmacKey(supplied);
 
   for (const key of keys) {
-    const keyBuf = Buffer.from(key);
-    if (keyBuf.byteLength === suppliedBuf.byteLength) {
-      if (timingSafeEqual(keyBuf, suppliedBuf)) {
-        return null; // match — allowed
-      }
+    const keyHash = hmacKey(key);
+    // Both hashes are always 32 bytes — no length leak.
+    if (timingSafeEqual(keyHash, suppliedHash)) {
+      return null; // match — allowed
     }
-    // Length mismatch: not a match, check next key. We still iterate all keys
-    // to avoid leaking which index matched via timing.
   }
 
   return new Response(

@@ -90,6 +90,7 @@ export async function startApiServer(port: number) {
 
   const server = Bun.serve({
     port,
+    maxRequestBodySize: MAX_BODY,
     routes: {
       "/scan": {
         POST: async (req) => {
