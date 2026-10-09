@@ -7,6 +7,7 @@ import { applyRules, suspectsJailbreak } from "./rules.ts";
 import { classify } from "./classifier.ts";
 import { classifyWithLaya } from "./laya.ts";
 import { similarityCheck } from "./similarity.ts";
+import { crossEncoderCheck } from "./cross-encoder.ts";
 import { judge, judgeDeferred, shouldDeferJudge } from "./judge.ts";
 import { updateSession, type SessionAssessment } from "./session.ts";
 import { addReference } from "./similarity.ts";
@@ -220,7 +221,23 @@ export async function scan(req: ScanRequest): Promise<ScanResult> {
     findings.push(...sim.findings);
     safeMatch = sim.safeMatch;
     similarityScore = sim.findings.length ? Math.max(...sim.findings.map((f) => f.confidence)) : 0;
-    trace.push({ stage: "similarity", ms: performance.now() - t4, score: similarityScore, skipped: false });
+
+    // Cross-encoder: compare against pre-embedded attack templates to catch
+    // paraphrased attacks that regex rules miss. Runs within the similarity stage.
+    const ceFindings = await crossEncoderCheck(scanText, SIMILARITY_THRESHOLD).catch(
+      () => [] as Finding[]
+    );
+    findings.push(...ceFindings);
+    const ceScore = ceFindings.length ? Math.max(...ceFindings.map((f) => f.confidence)) : 0;
+    similarityScore = Math.max(similarityScore, ceScore);
+
+    trace.push({
+      stage: "similarity",
+      ms: performance.now() - t4,
+      score: similarityScore,
+      skipped: false,
+      ...(ceScore > 0 ? { error: `cross_encoder_hit: ${ceScore.toFixed(3)}` } : {}),
+    });
   } else {
     trace.push({ stage: "similarity", ms: 0, skipped: true });
   }
