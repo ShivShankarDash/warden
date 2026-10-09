@@ -38,7 +38,7 @@ Environment variables:
   JUDGE_MODE             "sync" (default) or "async" — whether the judge runs
                          on the request path
   JUDGE_MODEL            Model name for the judge (e.g. gpt-4o)
-  DB_PATH                Path to the SQLite database (default: ./warden.db)
+  DB_PATH                Path to the SQLite database (default: ~/.warden/warden.db)
 
 Example config (.warden.json):
   {

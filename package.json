@@ -50,13 +50,13 @@
   "description": "A firewall for AI agents. Detects and blocks prompt injection in email, web pages, documents and MCP tool results before they reach your model.",
   "license": "MIT",
   "author": "shivdev",
-  "homepage": "https://github.com/shivdev/agent-warden#readme",
+  "homepage": "https://github.com/ShivShankarDash/warden#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/shivdev/agent-warden.git"
+    "url": "git+https://github.com/ShivShankarDash/warden.git"
   },
   "bugs": {
-    "url": "https://github.com/shivdev/agent-warden/issues"
+    "url": "https://github.com/ShivShankarDash/warden/issues"
   },
   "keywords": [
     "prompt-injection",
