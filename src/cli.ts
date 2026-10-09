@@ -8,7 +8,7 @@ import { loadConfig } from "./gateway/config.ts";
 import { startWarden } from "./mcp.ts";
 
 const USAGE = `
-Usage: warden-mcp [options]
+Usage: agent-warden [options]
 
   Warden MCP security gateway — scans content flowing between MCP hosts and
   upstream MCP servers for prompt injection, data exfiltration, and tool abuse.
@@ -47,7 +47,7 @@ Kiro config (~/.kiro/settings.json):
     "mcpServers": {
       "warden": {
         "command": "bunx",
-        "args": ["warden-mcp", "--upstream-cmd", "npx -y @anthropic/fetch-mcp"]
+        "args": ["agent-warden", "--upstream-cmd", "npx -y @anthropic/fetch-mcp"]
       }
     }
   }
@@ -57,7 +57,7 @@ Claude Desktop config:
     "mcpServers": {
       "warden": {
         "command": "bunx",
-        "args": ["warden-mcp", "--config", "/path/to/.warden.json"]
+        "args": ["agent-warden", "--config", "/path/to/.warden.json"]
       }
     }
   }

@@ -1,8 +1,9 @@
 {
-  "name": "warden-mcp",
+  "name": "agent-warden",
   "version": "0.1.0",
   "bin": {
-    "warden-mcp": "./src/cli.ts"
+    "agent-warden": "./src/cli.ts",
+    "warden": "./src/cli.ts"
   },
   "files": [
     "src/",
@@ -43,5 +44,30 @@
     "@types/bun": "latest",
     "@types/mailparser": "^3.4.5",
     "pdf-lib": "^1.17.1"
+  },
+  "description": "A firewall for AI agents. Detects and blocks prompt injection in email, web pages, documents and MCP tool results before they reach your model.",
+  "license": "MIT",
+  "author": "shivdev",
+  "homepage": "https://github.com/shivdev/agent-warden#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shivdev/agent-warden.git"
+  },
+  "bugs": {
+    "url": "https://github.com/shivdev/agent-warden/issues"
+  },
+  "keywords": [
+    "prompt-injection",
+    "ai-security",
+    "llm-security",
+    "mcp",
+    "model-context-protocol",
+    "agent-security",
+    "firewall",
+    "guardrails",
+    "jailbreak-detection"
+  ],
+  "engines": {
+    "bun": ">=1.1.0"
   }
 }

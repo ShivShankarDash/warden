@@ -119,7 +119,7 @@ Then replace your `mcp.json` with just Warden:
 ```json
 {
   "mcpServers": {
-    "warden": { "command": "bunx", "args": ["warden-mcp"] }
+    "warden": { "command": "bunx", "args": ["agent-warden"] }
   }
 }
 ```
