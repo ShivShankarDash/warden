@@ -279,20 +279,21 @@ function registerTools(upstreams: Upstream[]): Tool[] {
  * on descriptions that legitimately describe capabilities (e.g. "this tool grants
  * you internet access").
  */
-const TOOL_WHITELIST = new Set(
-  (process.env.WARDEN_TOOL_WHITELIST ?? "fetch,read_file,write_file,search,bash,list_directory,grep_search,web_search,web_fetch,get_directions,search_places,get_distance").split(",").map(s => s.trim())
+const UPSTREAM_WHITELIST = new Set(
+  (process.env.WARDEN_UPSTREAM_WHITELIST ?? "mcp-server-fetch,mcp-server-google-maps,mcp-server-filesystem,mcp-server-github").split(",").map(s => s.trim())
 );
 
-async function vetToolDescriptions(tools: Tool[]): Promise<Tool[]> {
+async function vetToolDescriptions(tools: Tool[], upstreamName: string): Promise<Tool[]> {
+  // Skip scanning for whitelisted upstreams — these are known-good MCP servers.
+  if (UPSTREAM_WHITELIST.has(upstreamName)) {
+    for (const tool of tools) {
+      logToolVet(tool.name, "ALLOW", 0, [], 0);
+    }
+    return tools;
+  }
+
   const safe: Tool[] = [];
   for (const tool of tools) {
-    // Skip scanning for whitelisted tools — these are from known-good MCP servers.
-    if (TOOL_WHITELIST.has(tool.name)) {
-      logToolVet(tool.name, "ALLOW", 0, [], 0);
-      safe.push(tool);
-      continue;
-    }
-
     const text = `${tool.name}\n${tool.description ?? ""}`;
     const t0 = performance.now();
     const verdict = await scanContent(text, "mcp_tool_description", SESSION_ID);
@@ -322,7 +323,12 @@ export async function startGateway(config: GatewayConfig) {
 
   if (!connected.length) console.error("[warden-gateway] WARNING: no upstreams connected — host will see no tools");
 
-  const exposed = await vetToolDescriptions(registerTools(connected));
+  // Vet each upstream's tools individually before registering — upstream name
+  // controls the whitelist, not individual tool names.
+  for (const u of connected) {
+    u.tools = await vetToolDescriptions(u.tools, u.name);
+  }
+  const exposed = registerTools(connected);
 
   // Startup banner — replaces the old "ready — exposing ..." line.
   const wardenUrl = process.env.WARDEN_URL ?? "http://localhost:3000";

@@ -196,6 +196,17 @@ export async function runRedTeam(opts?: RunRedTeamOpts): Promise<RunStats> {
 
   const stats = createStats();
 
+  // Reachability check — fail fast if the API server isn't running.
+  if (!dryRun) {
+    try {
+      const health = await fetch(apiUrl + "/metrics", { signal: AbortSignal.timeout(5000) });
+      if (!health.ok) throw new Error(health.statusText);
+    } catch (e) {
+      console.error("[redteam] Warden API not reachable at " + apiUrl + ". Start the server with `bun run dev` first.");
+      process.exit(1);
+    }
+  }
+
   // Load seeds
   let seeds = await loadSeedAttacks();
 

@@ -195,6 +195,16 @@ Per-agent policies go in `policies/<agentId>.yaml`.
 
 ## Checking it works
 
+### First-time setup
+
+If you cloned fresh, generate the binary test fixtures first:
+
+```bash
+bun test-fixtures/make-fixtures.ts
+```
+
+This creates PDF and DOCX files in `test-fixtures/binary/` that the extraction tests need. You only need to run this once.
+
 ```bash
 bun test                  # 320 tests, ~2 seconds
 bun run eval              # full accuracy measurement, ~5 minutes
