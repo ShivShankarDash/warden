@@ -42,7 +42,10 @@ const stats = {
   allowed: 0,
   blocked: 0,
   spotlighted: 0,
-  latencyMs: [] as number[],
+  /** Running sum of scan latencies in ms (avoids unbounded array growth). */
+  latencySumMs: 0,
+  /** Number of latency samples recorded. */
+  latencyCount: 0,
   attackTypes: new Set<string>(),
 };
 
@@ -54,8 +57,8 @@ export function getGatewayStats() {
     blocked: stats.blocked,
     spotlighted: stats.spotlighted,
     attackTypes: [...stats.attackTypes],
-    avgLatencyMs: stats.latencyMs.length
-      ? Math.round(stats.latencyMs.reduce((a, b) => a + b, 0) / stats.latencyMs.length)
+    avgLatencyMs: stats.latencyCount
+      ? Math.round(stats.latencySumMs / stats.latencyCount)
       : 0,
   };
 }
@@ -103,7 +106,7 @@ function logScan(
       break;
     }
     case "SPOTLIGHT": {
-      if (isQuiet) return;
+      // SPOTLIGHT is security-relevant (content wrapped in data boundary) — always print, even in quiet mode.
       console.error(`${prefix} → ${yellow(`${emoji.warn} SPOTLIGHT`)} (risk ${riskScore.toFixed(2)}) ${dim(`${elapsedMs}ms`)}`);
       console.error("  Passed with data boundary wrapper.");
       break;
@@ -285,6 +288,8 @@ const UPSTREAM_WHITELIST = new Set(
 
 async function vetToolDescriptions(tools: Tool[], upstreamName: string): Promise<Tool[]> {
   // Skip scanning for whitelisted upstreams — these are known-good MCP servers.
+  // Their tools are not counted in stats.totalScans because no scan is performed;
+  // the shutdown summary reflects only content that was actually analysed.
   if (UPSTREAM_WHITELIST.has(upstreamName)) {
     for (const tool of tools) {
       logToolVet(tool.name, "ALLOW", 0, [], 0);
@@ -378,6 +383,8 @@ export async function startGateway(config: GatewayConfig) {
     if (!text) {
       stats.totalScans++;
       stats.allowed++;
+      stats.latencyCount++;
+      // No scan performed — 0ms latency keeps the average denominator consistent.
       console.error(`${emoji.shield} [warden] Scan #${stats.totalScans}: ${toolName}(${argsSummary}) → ${dim("(empty result, skipped)")}`);
       return result as { content: unknown[]; isError?: boolean };
     }
@@ -394,7 +401,8 @@ export async function startGateway(config: GatewayConfig) {
 
     // Update stats.
     stats.totalScans++;
-    stats.latencyMs.push(elapsedMs);
+    stats.latencySumMs += elapsedMs;
+    stats.latencyCount++;
 
     switch (verdict.action) {
       case "ALLOW":
