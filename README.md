@@ -54,18 +54,24 @@ Everything lives in `~/.warden/`. Delete that folder to remove it all.
 
 ## Quick start
 
-You need [Bun](https://bun.sh). Everything else installs itself.
+**1. Install Bun** — Warden uses Bun's built-in SQLite, so Node can't run it.
 
 ```bash
-git clone <your-repo> warden && cd warden
-bun install
-bun run dev
+curl -fsSL https://bun.sh/install | bash
 ```
 
-Open **http://localhost:3000** — that's the dashboard.
+**2. Run Warden.** Nothing to clone, nothing to build.
 
-First start takes about 20 seconds while the detection models load. They load once,
-not per request.
+```bash
+bunx @shivdev/agent-warden --api-only --port 3000
+```
+
+Open **http://localhost:3000** for the dashboard. Scans appear live in your terminal
+as they happen, and Ctrl-C prints a session summary.
+
+> **First run takes a few minutes.** It downloads ~50MB of detection models, then
+> sets up the Laya detector (~1.2GB) in its own virtualenv. It tells you what it's
+> doing at each step. Later starts take about 20 seconds.
 
 ### Try it
 
@@ -102,27 +108,64 @@ it, because it's the only address your tool has.
       fetch          google-maps
 ```
 
-Take whatever is in your editor's `mcp.json` today and move those entries into
-`.warden.json` in this folder:
-
-```json
-{
-  "upstreams": {
-    "fetch":       { "command": "uvx", "args": ["mcp-server-fetch"] },
-    "google-maps": { "command": "uvx", "args": ["mcp-server-google-maps"] }
-  }
-}
-```
-
-Then replace your `mcp.json` with just Warden:
+**The simple way** — list your servers right in `mcp.json`. Say you have this today:
 
 ```json
 {
   "mcpServers": {
-    "warden": { "command": "bunx", "args": ["@shivdev/agent-warden"] }
+    "fetch": { "command": "uvx", "args": ["mcp-server-fetch"] }
   }
 }
 ```
+
+Replace it with Warden, passing the same server as an upstream:
+
+```json
+{
+  "mcpServers": {
+    "warden": {
+      "command": "bunx",
+      "args": [
+        "@shivdev/agent-warden",
+        "--upstream-cmd", "uvx mcp-server-fetch"
+      ],
+      "env": { "ANTHROPIC_API_KEY": "sk-ant-..." }
+    }
+  }
+}
+```
+
+Repeat `--upstream-cmd` once per server. Restart your editor and you're done — the
+`env` block is optional (see *Setup* below).
+
+**For more than two or three servers**, put them in a file and point at it with an
+**absolute path**:
+
+```json
+{ "mcpServers": {
+    "warden": {
+      "command": "bunx",
+      "args": ["@shivdev/agent-warden", "--config", "/Users/you/.warden.json"]
+    }
+}}
+```
+
+```json
+// /Users/you/.warden.json
+{
+  "upstreams": {
+    "fetch":       { "command": "uvx", "args": ["mcp-server-fetch"] },
+    "google-maps": {
+      "command": "uvx", "args": ["mcp-server-google-maps"],
+      "env": { "GOOGLE_MAPS_API_KEY": "..." }
+    }
+  }
+}
+```
+
+> Use an absolute path. Warden also looks for `.warden.json` in the current
+> directory, but an MCP host picks that directory itself — so relative paths work
+> inconsistently.
 
 Your tools keep working exactly as before. Warden now checks every tool description
 when it loads and every result before your agent reads it.
@@ -226,32 +269,48 @@ Per-agent policies go in `policies/<agentId>.yaml`.
 
 ## Checking it works
 
-### First-time setup
+Point it at something and watch. The terminal shows every decision as it happens:
 
-If you cloned fresh, generate the binary test fixtures first:
-
-```bash
-bun test-fixtures/make-fixtures.ts
+```
+🛡 BLOCK      [email] risk 0.95 36ms — instruction_override "Ignore all previous…"
+✅ ALLOW      [user_message] 45ms "What is the capital of France?"
 ```
 
-This creates PDF and DOCX files in `test-fixtures/binary/` that the extraction tests need. You only need to run this once.
+Ctrl-C prints a session summary. The dashboard shows the same data with history and
+charts.
+
+---
+
+## Contributing
 
 ```bash
-bun test                  # 320 tests, ~2 seconds
+git clone https://github.com/shivdev/agent-warden && cd agent-warden
+bun install
+bun test-fixtures/make-fixtures.ts   # generates the binary PDF/DOCX test fixtures
+```
+
+```bash
+bun test                  # 394 tests, ~2 seconds
+bun run dev               # API + dashboard with hot reload
 bun run eval              # full accuracy measurement, ~5 minutes
 bun run eval:session      # multi-message attack detection
 bun run eval:robustness   # resistance to disguised attacks
 ```
 
-The eval tells you if its own results are untrustworthy — if the judge was
-unavailable during a run it prints **RESULTS DEGRADED** rather than reporting a
+The eval reports when its own results are untrustworthy — if the judge was
+unavailable during a run it prints **RESULTS DEGRADED** rather than giving you a
 number that looks fine but isn't.
+
+Stop `bun run dev` before running tests. Both open the same SQLite file and the
+second one will hang waiting for a lock.
 
 ---
 
-## Deploying
+## Hosting it
 
-See **[DEPLOY.md](DEPLOY.md)** for hosting on EC2.
+See **[DEPLOY.md](DEPLOY.md)** — EC2 instance sizing, systemd units for both
+processes, TLS, and the auth you need before exposing `/scan` publicly (the judge
+calls a paid API, so an open endpoint is someone else's bill).
 
 ## Understanding the code
 
