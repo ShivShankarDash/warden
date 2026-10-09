@@ -32,6 +32,7 @@ import {
 import { loadConfig, isHttpUpstream, type UpstreamSpec, type HttpUpstream, type GatewayConfig } from "./config.ts";
 import { scanContent } from "./scan.ts";
 import { sniff } from "../extract/sniff.ts";
+import { scanPii } from "../guard/pii.ts";
 import type { Action, Finding, SourceType } from "../types.ts";
 import { red, green, yellow, dim, bold, cyan, rule, emoji } from "./colors.ts";
 
@@ -363,9 +364,33 @@ export async function startGateway(config: GatewayConfig) {
       ? toolName.slice(upstream.name.length + 2)
       : toolName;
 
+    // PII scan outbound tool arguments before forwarding to upstream.
+    let forwardArgs = req.params.arguments ?? {};
+    if (process.env.WARDEN_PII_ENABLED !== "0") {
+      const mutatedArgs: Record<string, unknown> = { ...forwardArgs };
+      let argRedacted = false;
+      const argPiiTypes: string[] = [];
+      for (const [key, val] of Object.entries(mutatedArgs)) {
+        if (typeof val === "string") {
+          const piiResult = scanPii(val);
+          if (piiResult.hasPii) {
+            mutatedArgs[key] = piiResult.mutatedContent;
+            argRedacted = true;
+            for (const m of piiResult.matches) {
+              if (!argPiiTypes.includes(m.type)) argPiiTypes.push(m.type);
+            }
+          }
+        }
+      }
+      if (argRedacted) {
+        forwardArgs = mutatedArgs;
+        console.error(`     ${emoji.warn} PII redacted in args: ${argPiiTypes.join(", ")}`);
+      }
+    }
+
     const result = await upstream.client.callTool({
       name: realName,
-      arguments: req.params.arguments ?? {},
+      arguments: forwardArgs,
     });
 
     // Scan point 2: the tool result, before it reaches the model's context. This is
@@ -428,6 +453,24 @@ export async function startGateway(config: GatewayConfig) {
         content: [{ type: "text" as const, text: verdict.replacement }],
         isError: verdict.action === "BLOCK" || verdict.action === "QUARANTINE",
       };
+    }
+
+    // PII scan inbound tool result — redact PII before it reaches the model's context.
+    if (process.env.WARDEN_PII_ENABLED !== "0") {
+      const piiResult = scanPii(text);
+      if (piiResult.hasPii) {
+        const piiTypes = [...new Set(piiResult.matches.map((m) => m.type))];
+        console.error(`     ${emoji.warn} PII redacted: ${piiResult.matches.length} items (${piiTypes.join(", ")})`);
+        for (const m of piiResult.matches) {
+          console.error(`        ${dim(m.original)} → ${yellow(m.replacement)}`);
+        }
+        // Replace text content entries with the mutated content.
+        const mutatedContent = (result as { content?: { type?: string; text?: string }[] })?.content?.map(
+          (c: { type?: string; text?: string }) =>
+            c?.type === "text" ? { ...c, text: (c.text ?? "").length ? piiResult.mutatedContent : c.text } : c
+        ) ?? [];
+        return { content: mutatedContent, isError: false };
+      }
     }
 
     return result as { content: unknown[]; isError?: boolean };

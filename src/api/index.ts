@@ -6,6 +6,7 @@ import { getSession, resetSession } from "../detect/session.ts";
 import { scanOutput, generateCanary } from "../guard/output.ts";
 import { checkToolCall } from "../guard/tools.ts";
 import { recordTaint } from "../guard/taint.ts";
+import { scanPii } from "../guard/pii.ts";
 import { enqueueReview, pendingReviews, getReview, markResolved } from "../store/review.ts";
 import { addReference, addSafeReference } from "../detect/similarity.ts";
 import { memoryStats, recentMemories, recentPromotions } from "../store/memory.ts";
@@ -175,6 +176,18 @@ export async function startApiServer(port: number) {
               includeContent: false,
             });
             return Response.json({ ...result, explanation });
+          }
+
+          // PII scanning — additive response data on the original content.
+          if (process.env.WARDEN_PII_ENABLED !== "0" && typeof body.content === "string") {
+            const piiResult = scanPii(body.content);
+            if (piiResult.hasPii) {
+              return Response.json({
+                ...result,
+                piiMatches: piiResult.matches,
+                mutatedContent: piiResult.mutatedContent,
+              });
+            }
           }
 
           return Response.json(result);
