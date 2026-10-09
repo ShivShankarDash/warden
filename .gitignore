@@ -1,0 +1,7 @@
+node_modules/
+.env
+eval/results/*.json
+*.db
+*.sqlite
+warden-test.db
+warden-dash.db
