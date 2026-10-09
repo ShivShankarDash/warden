@@ -329,6 +329,59 @@ A rule that raises detection by 1% and costs one false positive is a bad trade h
 
 ---
 
+## Known limitations
+
+### A confident classifier cannot be appealed
+
+`src/detect/orchestrator.ts` skips the judge when Laya scores above 0.85:
+
+```ts
+if (laya.injectionProbability > 0.85) layaSkipJudge = true;
+```
+
+Note the asymmetry with the branch below it, which also requires `ruleScore < 0.3`.
+The attack branch deliberately does not check the rules. That means a case where
+Laya is confident and *nothing else agrees* is decided by Laya alone — and the judge
+is the only stage that can lower a score, so there is no way to overturn it.
+
+This costs exactly one false positive on the eval suite: `benign-email-routing-0002`,
+an ordinary "send the updated invoice to accounts@vendor.com", which Laya scores 0.85
+with zero rule or memory support.
+
+Making the branch symmetric was tried and reverted. Measured on 257 cases:
+
+| | Attacks caught | FP |
+|---|---|---|
+| `> 0.85` alone (current) | 148/190 | 1 (QUARANTINE) |
+| `> 0.85 && ruleScore >= 0.3` | 146/190 | 1 (HUMAN_REVIEW) |
+
+Referring those cases to the judge acquitted two real attacks and did not clear the
+false positive — it only softened the action. Two misses cost more than one
+over-flagged message that a reviewer resolves in seconds, so the asymmetry stays.
+Reopen this if the judge prompt improves at acquitting benign business language,
+or if Laya is recalibrated.
+
+### Exfiltration rules need a named asset
+
+The exfiltration rule used to be `(send|forward|email|post).{0,80}to\s+<address>` at
+0.88. It matched every ordinary routing sentence in business email. Two things made
+that worse than a normal false positive:
+
+1. 0.88 is QUARANTINE on its own — no corroboration needed.
+2. A quarantine feeds the learning loop, so the false positive became an attack
+   memory and the *next* similar message scored higher. Observed going 0.88 →
+   0.95 (BLOCK) on the second scan of the same sentence, matching itself at
+   cosine 1.000.
+
+The rule now requires a named sensitive asset (customer list, credentials, database)
+between the verb and the address, with a separate low-confidence rule at 0.55 for
+bulk qualifiers. `tests/rules.test.ts` guards both directions.
+
+The general lesson: any rule confident enough to quarantine on its own is also
+confident enough to poison memory, so its precision matters twice.
+
+---
+
 ## Gotchas
 
 **Stop the dev server before running tests.** `getDb()` runs DDL on open and takes an

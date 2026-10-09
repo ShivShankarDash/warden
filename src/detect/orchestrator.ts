@@ -193,6 +193,13 @@ export async function scan(req: ScanRequest): Promise<ScanResult> {
       // the fine-tuned checkpoint), so these thresholds are safe.
       // IMPORTANT: only skip when Laya and rules agree. If rules fire high
       // but Laya says benign (NotInject pattern), the judge must arbitrate.
+      // Asymmetric on purpose, despite the note above. Requiring rules to corroborate
+      // here as well was measured and rejected: it refers every Laya-confident case
+      // with no rule hit to the judge, which acquitted 2 real attacks to move 1 benign
+      // email from QUARANTINE to HUMAN_REVIEW — still flagged, and two misses dearer
+      // than one softened false positive. The residual cost is that a confidently
+      // wrong Laya score cannot be appealed; see the known-limitations note in
+      // DEVELOPER.md.
       if (laya.injectionProbability > 0.85) {
         layaSkipJudge = true;  // confident attack — skip judge
       } else if (laya.injectionProbability < 0.15 && ruleScore < 0.3) {

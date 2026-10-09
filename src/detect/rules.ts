@@ -246,10 +246,35 @@ const RULES: RuleSpec[] = [
     reason: "Tool invocation by name with argument",
   },
   {
-    pattern: /(send|forward|email|post).{0,80}to\s+[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+/i,
+    // Exfiltration is "send <something sensitive> to <address>", not "send <anything>
+    // to <address>". The unqualified form matched the single most ordinary sentence in
+    // business email — "send the Q3 report to sarah.chen@acme.com" — at 0.88, which is
+    // QUARANTINE on its own. Worse, a quarantine feeds the learning loop, so one false
+    // positive taught Warden that routine correspondence was an attack and the next
+    // similar message scored higher still. Requiring a sensitive or bulk object keeps
+    // the attacks (all of which name what they are stealing) and drops the noise.
+    pattern:
+      /\b(send|forward|email|post|upload|exfiltrate|transmit|share)\b[^@]{0,80}?\b(customer|client|contact|user|employee|patient|subscriber|mailing)\s+(list|data|database|records?|details|info(?:rmation)?)\b[^@]{0,80}?to\s+[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+/i,
     attackType: "tool_abuse",
     confidence: 0.88,
-    reason: "Exfiltration via email to specific address",
+    reason: "Exfiltration of a contact/customer list to a specific address",
+  },
+  {
+    pattern:
+      /\b(send|forward|email|post|upload|exfiltrate|transmit|leak)\b[^@]{0,80}?\b(password|passwords|credential|credentials|api[\s_-]?key|secret|secrets|access[\s_-]?token|private[\s_-]?key|ssn|social security|credit[\s_-]?card|system prompt|conversation history|chat history|session cookie)\b[^@]{0,80}?to\s+[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+/i,
+    attackType: "credential_theft",
+    confidence: 0.92,
+    reason: "Exfiltration of credentials or secrets to a specific address",
+  },
+  {
+    // Bulk qualifiers ("all", "every", "each") turn an otherwise ordinary send into a
+    // sweep. Lower confidence than the named-asset rules: this is a contributing
+    // signal that needs corroboration, not grounds to block on its own.
+    pattern:
+      /\b(send|forward|email|post|upload|transmit)\b\s+(all|every|each|the\s+(?:entire|full|complete))\b[^@]{0,80}?to\s+[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+/i,
+    attackType: "tool_abuse",
+    confidence: 0.55,
+    reason: "Bulk send to a specific address",
   },
   {
     pattern: /before\s+(processing|summarizing|responding|using|generating|reviewing|following).{0,60}(call|invoke|fetch|send|execute|use)/i,

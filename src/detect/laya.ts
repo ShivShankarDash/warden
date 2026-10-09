@@ -31,6 +31,14 @@ export async function classifyWithLaya(
   text: string,
   threshold = 0.75
 ): Promise<LayaResult> {
+  // WARDEN_NO_LAYA=1 used to stop Warden starting the sidecar but not stop it using
+  // one that happened to already be listening on 8111 — so the flag silently did
+  // nothing on any machine that had run Warden before, and "measure without Laya"
+  // quietly measured with it. Honour the opt-out at the point of use.
+  if (process.env.WARDEN_NO_LAYA === "1") {
+    return { findings: [], benignScore: null, injectionProbability: 0 };
+  }
+
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), LAYA_TIMEOUT);
