@@ -8,7 +8,7 @@ import { loadConfig } from "./gateway/config.ts";
 import { startWarden } from "./mcp.ts";
 
 const USAGE = `
-Usage: agent-warden [command] [options]
+Usage: agent-warden [command] [options]   (bunx @shivdev/agent-warden)
 
 Commands:
   (default)              Run the MCP gateway
@@ -32,18 +32,21 @@ Options:
                          --api-only)
 
 Environment variables:
-  OPENAI_API_KEY         API key for the LLM judge stage (optional)
+  ANTHROPIC_API_KEY      API key for the LLM judge stage (optional). Also
+                         accepts OPENAI_API_KEY or OPENROUTER_API_KEY
   WARDEN_FAIL_MODE       "closed" (default) or "open" — what happens when a
                          detection stage errors
   JUDGE_MODE             "sync" (default) or "async" — whether the judge runs
                          on the request path
   JUDGE_MODEL            Model name for the judge (e.g. gpt-4o)
   DB_PATH                Path to the SQLite database (default: ~/.warden/warden.db)
+  WARDEN_NO_LAYA         "1" disables the Laya classifier entirely
+  WARDEN_NO_LAYA_INSTALL "1" skips the automatic Laya setup on first run
 
 Example config (.warden.json):
   {
     "upstreams": {
-      "fetch": { "command": "npx", "args": ["-y", "@anthropic/fetch-mcp"] }
+      "fetch": { "command": "uvx", "args": ["mcp-server-fetch"] }
     },
     "policy": { "failMode": "closed", "judgeMode": "async" },
     "judge": { "model": "gpt-4o" }
@@ -54,7 +57,7 @@ Kiro config (~/.kiro/settings.json):
     "mcpServers": {
       "warden": {
         "command": "bunx",
-        "args": ["agent-warden", "--upstream-cmd", "npx -y @anthropic/fetch-mcp"]
+        "args": ["@shivdev/agent-warden", "--upstream-cmd", "uvx mcp-server-fetch"]
       }
     }
   }
@@ -64,7 +67,7 @@ Claude Desktop config:
     "mcpServers": {
       "warden": {
         "command": "bunx",
-        "args": ["agent-warden", "--config", "/path/to/.warden.json"]
+        "args": ["@shivdev/agent-warden", "--config", "/path/to/.warden.json"]
       }
     }
   }
@@ -91,7 +94,7 @@ async function runSubcommand(relPath: string, label: string): Promise<never> {
   const target = new URL(relPath, import.meta.url).pathname;
   if (!(await Bun.file(target).exists())) {
     console.error(`The ${label} agent is not available in this install.`);
-    console.error("It ships with the source repo: https://github.com/shivdev/agent-warden");
+    console.error("It ships with the source repo: https://github.com/ShivShankarDash/warden");
     process.exit(1);
   }
   const proc = Bun.spawn(["bun", target, ...args.slice(1)], {
