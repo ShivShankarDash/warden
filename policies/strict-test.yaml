@@ -1,0 +1,12 @@
+# Fixture for tests/policy.test.ts — a deliberately strict agent.
+agentId: strict-test
+failMode: closed
+thresholds:
+  rules: 0.5          # drops weak rule hits that default would keep
+  classifier: 0.95
+  similarity: 0.9
+  judge: 0.5
+  session: 0.5        # escalates on a shallower trajectory
+  highConfidence: 0.6 # blocks far more readily than default's 0.9
+  benignCertainty: 0.99
+allowedTools: ["search"]

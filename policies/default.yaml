@@ -1,0 +1,21 @@
+# Default policy. Every agent falls back to this when it has no policies/<agentId>.yaml.
+# Environment variables override these; see src/policy/loader.ts.
+agentId: default
+failMode: closed
+
+thresholds:
+  rules: 0            # minimum rule confidence to count as a finding
+  classifier: 0.6     # minimum classifier confidence to report an injection
+  similarity: 0.70    # cosine above which a known-attack match is reported
+  judge: 0.5          # minimum score that justifies spending a judge call
+  session: 0.8        # accumulated session risk at which a trajectory escalates
+  highConfidence: 0.9 # score at or above which stages short-circuit and action is BLOCK
+  benignCertainty: 0.99 # classifier benign-confidence below which we refer to the judge
+
+# Empty means unrestricted. Listing tools makes /check-tool reject anything else.
+allowedTools: []
+
+# Per-source overrides, e.g. be lenient on direct user input but strict on documents:
+# sourceOverrides:
+#   user_message:
+#     failMode: open
