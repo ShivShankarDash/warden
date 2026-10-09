@@ -30,14 +30,22 @@ export async function startWarden(options: WardenOptions) {
     applyConfigToEnv(config);
   }
 
-  // Start the API server (initialises DB, loads models).
-  const apiServer = await startApiServer(options.port ?? 0);
-  const actualPort = apiServer.port;
+  // When WARDEN_URL is already set (pointing at a remote server), skip the local
+  // API server entirely — the gateway will send scans to the remote instance.
+  const remoteUrl = process.env.WARDEN_URL;
+  let apiServer: Awaited<ReturnType<typeof startApiServer>> | null = null;
+  let actualPort: number | undefined;
 
-  // Point the gateway's HTTP scan client at the in-process API server.
-  process.env.WARDEN_URL = `http://localhost:${actualPort}`;
-
-  console.error(`[warden] API server on port ${actualPort}`);
+  if (remoteUrl) {
+    console.error(`[warden] Using remote API at ${remoteUrl} (skipping local server)`);
+  } else {
+    // Start the API server (initialises DB, loads models).
+    apiServer = await startApiServer(options.port ?? 0);
+    actualPort = apiServer.port;
+    // Point the gateway's HTTP scan client at the in-process API server.
+    process.env.WARDEN_URL = `http://localhost:${actualPort}`;
+    console.error(`[warden] API server on port ${actualPort}`);
+  }
 
   if (mode === "api-only") {
     return { apiServer, port: actualPort };
