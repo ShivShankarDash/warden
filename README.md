@@ -177,6 +177,37 @@ integrate, but it only protects the code paths you remember to add it to.
 
 ---
 
+## It guards both directions
+
+Stopping poisoned content reaching your agent is only half the job. If an agent is
+compromised by some route you missed, something still has to stop the data leaving.
+
+```
+   ┌──────────────────────────────────────────────────────┐
+   │                                                      │
+   │   tool descriptions  ──►  ① scanned when they load   │
+   │   tool results       ──►  ② scanned before the model │
+   │                              reads them              │
+   │                                                      │
+   │              your agent decides to act               │
+   │                          │                           │
+   │                          ▼                           │
+   │   tool call arguments ──►  ③ scanned before the call │
+   │                              is allowed to run       │
+   │                                                      │
+   └──────────────────────────────────────────────────────┘
+```
+
+**③ is the one that matters when something has already gone wrong.** Before any tool
+call is forwarded, Warden checks whether the arguments contain credentials, an
+exfiltration URL, or text taken from content that failed a scan earlier in the same
+session. If they do, the call never runs.
+
+Tools that only read are left alone — summarising a document your agent just fetched
+is the job, not an attack. Only tools that *send* data are held to this.
+
+---
+
 ## What you get back
 
 Every scan returns one of six decisions:

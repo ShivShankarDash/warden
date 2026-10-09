@@ -1,7 +1,18 @@
 import type { Action, Finding, SourceType } from "../types.ts";
 import { sanitize, isSanitizable } from "../sanitize.ts";
 
-const WARDEN_URL = process.env.WARDEN_URL ?? "http://localhost:3000";
+/**
+ * Resolved per call, not at module load.
+ *
+ * In MCP mode the API server binds an OS-assigned port and mcp.ts writes the real
+ * URL into the environment *after* this module has been imported. Capturing it at
+ * load time meant every scan went to localhost:3000, hit nothing, and failed —
+ * which fail-closed then turned into "block everything", so the gateway exposed no
+ * tools at all. Reading it lazily is what makes the packaged CLI work.
+ */
+function wardenUrl(): string {
+  return process.env.WARDEN_URL ?? "http://localhost:3000";
+}
 const TIMEOUT_MS = Number(process.env.WARDEN_SCAN_TIMEOUT_MS ?? 10_000);
 
 /**
@@ -30,7 +41,7 @@ export async function scanContent(
   const WARDEN_API_KEY = process.env.WARDEN_API_KEY;
 
   try {
-    const res = await fetch(`${WARDEN_URL}/scan`, {
+    const res = await fetch(`${wardenUrl()}/scan`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -63,7 +74,7 @@ export async function scanContent(
       riskScore: 1,
       findings: [],
       replacement:
-        `[warden] Content withheld: the scanner at ${WARDEN_URL} could not be reached (${reason}). ` +
+        `[warden] Content withheld: the scanner at ${wardenUrl()} could not be reached (${reason}). ` +
         `Start Warden, or set WARDEN_FAIL_MODE=open to pass unscanned content through.`,
     };
   }
@@ -109,5 +120,58 @@ function buildReplacement(
 
     default:
       return undefined;
+  }
+}
+
+/**
+ * Checks an outbound tool call before it is forwarded upstream.
+ *
+ * The gateway's two inbound scan points stop poisoned content reaching the model.
+ * This is the other direction: the moment a compromised agent would actually do
+ * damage — sending the email, fetching the attacker's URL, writing the file. It runs
+ * *before* the call executes, so it prevents rather than reports.
+ *
+ * Catches three things the inbound scans cannot: credentials in the arguments,
+ * exfiltration URLs, and arguments carrying content that failed a scan earlier in
+ * this session (taint). Non-egress tools are deliberately allowed to carry tainted
+ * content — summarising a document the agent just read is the job, not an attack.
+ */
+export interface ToolCallVerdict {
+  allowed: boolean;
+  reason: string;
+  blockedArgs: string[];
+}
+
+export async function checkOutboundToolCall(
+  tool: string,
+  args: Record<string, unknown>,
+  sessionId?: string,
+  allowedTools?: string[]
+): Promise<ToolCallVerdict> {
+  const WARDEN_API_KEY = process.env.WARDEN_API_KEY;
+  try {
+    const res = await fetch(`${wardenUrl()}/check-tool`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(WARDEN_API_KEY ? { "X-API-Key": WARDEN_API_KEY } : {}),
+      },
+      body: JSON.stringify({ agentId: "mcp-gateway", sessionId, tool, args, allowedTools }),
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    return (await res.json()) as ToolCallVerdict;
+  } catch (e) {
+    const reason = e instanceof Error ? e.message : String(e);
+    // Same fail-closed posture as content scanning: a check that could not run is
+    // not a pass. WARDEN_FAIL_MODE=open flips this for availability over safety.
+    if ((process.env.WARDEN_FAIL_MODE ?? "closed") === "open") {
+      return { allowed: true, reason: `check skipped (${reason})`, blockedArgs: [] };
+    }
+    return {
+      allowed: false,
+      reason: `Could not verify this tool call (${reason}). Set WARDEN_FAIL_MODE=open to allow unchecked calls.`,
+      blockedArgs: [],
+    };
   }
 }

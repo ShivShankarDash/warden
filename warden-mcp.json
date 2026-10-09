@@ -1,0 +1,1 @@
+{ "upstreams": { "mailer": { "command": "bun", "args": ["/Users/shivshankardash/warden/test-fixtures/exfil-mcp-server.ts"] } } }

@@ -30,7 +30,7 @@ import {
   type Tool,
 } from "@modelcontextprotocol/sdk/types.js";
 import { loadConfig, isHttpUpstream, type UpstreamSpec, type HttpUpstream, type GatewayConfig } from "./config.ts";
-import { scanContent } from "./scan.ts";
+import { scanContent, checkOutboundToolCall } from "./scan.ts";
 import { sniff } from "../extract/sniff.ts";
 import { scanPii } from "../guard/pii.ts";
 import type { Action, Finding, SourceType } from "../types.ts";
@@ -378,6 +378,31 @@ export async function startGateway(config: GatewayConfig) {
         forwardArgs = mutatedArgs;
         console.error(`     ${emoji.warn} PII redacted in args: ${argPiiTypes.join(", ")}`);
       }
+    }
+
+    // Scan point 3: the outbound call, before it executes.
+    //
+    // The two inbound scan points stop poisoned content reaching the model. This is
+    // the other direction — the point where a compromised agent would actually send
+    // the data. Checked before forwarding, so it prevents rather than reports.
+    const outbound = await checkOutboundToolCall(toolName, forwardArgs, SESSION_ID);
+    if (!outbound.allowed) {
+      stats.blocked++;
+      stats.totalScans++;
+      console.error(
+        `${emoji.shield} ${red("BLOCKED OUTBOUND")} ${bold(toolName)} ${dim("— " + outbound.reason)}`
+      );
+      return {
+        isError: true,
+        content: [
+          {
+            type: "text" as const,
+            text:
+              `[warden] This tool call was blocked before it ran.\n${outbound.reason}\n` +
+              `Tell the user the action was prevented; do not retry it another way.`,
+          },
+        ],
+      };
     }
 
     const result = await upstream.client.callTool({

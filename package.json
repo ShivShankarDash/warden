@@ -1,6 +1,6 @@
 {
   "name": "@shivdev/agent-warden",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "bin": {
     "agent-warden": "./src/cli.ts",
     "warden": "./src/cli.ts"
