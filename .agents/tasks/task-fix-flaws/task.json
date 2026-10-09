@@ -1,7 +1,0 @@
-{
-  "task_id": "task-fix-flaws",
-  "task_description": "Fix 13 identified flaws in Warden across API validation, detection pipeline, gateway security, tooling, and documentation. Ordered by severity: CRITICAL > HIGH > MEDIUM > LOW.",
-  "status": "completed",
-  "feature_order": ["FEAT-001", "FEAT-002", "FEAT-003"],
-  "blocked_reason": null
-}

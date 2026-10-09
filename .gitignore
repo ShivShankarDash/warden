@@ -5,3 +5,6 @@ eval/results/*.json
 *.sqlite
 warden-test.db
 warden-dash.db
+venv/
+.agents/
+*.log

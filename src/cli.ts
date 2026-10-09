@@ -8,7 +8,14 @@ import { loadConfig } from "./gateway/config.ts";
 import { startWarden } from "./mcp.ts";
 
 const USAGE = `
-Usage: agent-warden [options]
+Usage: agent-warden [command] [options]
+
+Commands:
+  (default)              Run the MCP gateway
+  intel                  Fetch new attack examples from public threat feeds and
+                         seed the ones this install misses into memory
+  redteam                Probe this install for gaps with generated attacks
+                         (source repo only; needs an LLM key)
 
   Warden MCP security gateway — scans content flowing between MCP hosts and
   upstream MCP servers for prompt injection, data exfiltration, and tool abuse.
@@ -68,9 +75,47 @@ function printHelp() {
   process.exit(0);
 }
 
-// --- Argument parsing (no external deps) ---
+// --- Subcommands ---------------------------------------------------------
+//
+// The intel and redteam agents were previously reachable only as package.json
+// scripts, which work inside a checkout and nowhere else — so anyone who
+// installed Warden from npm had the code on disk with no way to run it. Routing
+// them through the CLI makes them part of the product rather than repo tooling.
 
 const args = process.argv.slice(2);
+
+async function runSubcommand(relPath: string, label: string): Promise<never> {
+  // These modules guard their entry point with `import.meta.main`, so importing
+  // them does nothing. Spawning the file keeps that guard true and lets each
+  // module parse its own flags.
+  const target = new URL(relPath, import.meta.url).pathname;
+  if (!(await Bun.file(target).exists())) {
+    console.error(`The ${label} agent is not available in this install.`);
+    console.error("It ships with the source repo: https://github.com/shivdev/agent-warden");
+    process.exit(1);
+  }
+  const proc = Bun.spawn(["bun", target, ...args.slice(1)], {
+    stdout: "inherit",
+    stderr: "inherit",
+    stdin: "inherit",
+  });
+  process.exit(await proc.exited);
+}
+
+if (args[0] === "intel") {
+  // Pulls fresh prompt-injection examples from public datasets, checks each
+  // against this install, and seeds the misses into memory.
+  await runSubcommand("./intel/agent.ts", "intel");
+}
+
+if (args[0] === "redteam") {
+  // Generates adversarial variants and probes this install for gaps. Requires an
+  // LLM key; it is a testing tool, not part of the serving path.
+  await runSubcommand("../redteam/runner.ts", "redteam");
+}
+
+// --- Argument parsing (no external deps) ---
+
 let configPath: string | undefined;
 let apiOnly = false;
 let quiet = process.env.WARDEN_QUIET === "1";

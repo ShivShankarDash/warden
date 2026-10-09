@@ -194,26 +194,105 @@ Every scan returns one of six decisions:
 
 ## How it decides
 
-Content passes through seven checks. Each is cheaper than the next, and the chain
-stops as soon as something is certain — so obvious attacks cost almost nothing.
+Content passes through seven checks. Each is cheaper than the one after it, and the
+chain stops as soon as something is certain — so obvious attacks cost almost nothing
+and only genuinely ambiguous content reaches the expensive stages.
 
-| | Check | What it does | Speed |
-|---|---|---|---|
-| 1 | **Extract** | Pulls out hidden text — white-on-white in PDFs, HTML comments, Word tracked changes | ~1ms |
-| 2 | **Decode** | Unwraps base64, invisible characters, lookalike letters | ~0.1ms |
-| 3 | **Rules** | 107 patterns across English, German, Spanish, French | ~0.1ms |
-| 4 | **Classifier** | A small AI model trained to spot injections | ~58ms |
-| 5 | **Memory** | Compares against attacks it has seen before | ~1ms |
-| 6 | **Judge** | Asks a large model when the earlier checks disagree | ~1500ms |
-| 7 | **Session** | Watches for attacks spread across several messages | ~0.1ms |
+```
+            content arrives
+                   │
+                   ▼
+   ┌───────────────────────────────┐
+   │ 1  EXTRACT          ~1ms      │  pulls out hidden text: white-on-white in
+   │                               │  PDFs, HTML comments, Word tracked changes
+   └───────────────┬───────────────┘
+                   ▼
+   ┌───────────────────────────────┐
+   │ 2  DECODE           ~0.1ms    │  unwraps base64, invisible characters,
+   │                               │  lookalike letters (Сyrillic "о" vs "o")
+   └───────────────┬───────────────┘
+                   ▼
+   ┌───────────────────────────────┐
+   │ 3  RULES            ~0.1ms    │  107 patterns, EN/DE/ES/FR
+   └───────────────┬───────────────┘
+                   │
+          score ≥ 0.9?  ──── yes ──────────────►  BLOCK      (done in ~0.3ms)
+                   │ no
+                   ▼
+   ┌───────────────────────────────┐
+   │ 4  CLASSIFIER       ~58ms     │  Laya, an AI model trained to spot
+   │                               │  injections (falls back to a built-in one)
+   └───────────────┬───────────────┘
+                   ▼
+   ┌───────────────────────────────┐
+   │ 5  MEMORY           ~1ms      │  have we seen this attack before?
+   └───────────────┬───────────────┘
+                   │
+         still unsure?  ──── no ───────────────►  ALLOW / BLOCK
+                   │ yes  (~19% of content)
+                   ▼
+   ┌───────────────────────────────┐
+   │ 6  JUDGE            ~1500ms   │  asks a large model to adjudicate.
+   │                               │  Its verdict is final — it can clear
+   │                               │  content the earlier stages flagged.
+   └───────────────┬───────────────┘
+                   ▼
+   ┌───────────────────────────────┐
+   │ 7  SESSION          ~0.1ms    │  is this one step of a slow attack
+   │                               │  spread across several messages?
+   └───────────────┬───────────────┘
+                   ▼
+            ALLOW · SPOTLIGHT · SANITIZE
+            HUMAN_REVIEW · QUARANTINE · BLOCK
+```
 
-Only about **19%** of content reaches the judge. Everything else is decided in
-milliseconds.
+**Roughly 81% of content never reaches the judge.** It's decided in milliseconds by
+the cheap stages.
 
-**It learns.** When the judge confirms an attack, Warden remembers it. The next time
-something similar arrives, step 5 catches it in ~1ms instead of paying for step 6
-again. New memories start on probation and only count once confirmed — so one
-mistake can't poison it.
+---
+
+## It gets better the more you use it
+
+Warden remembers. This is the part that compounds.
+
+```
+   judge confirms an attack  (~1500ms, costs an API call)
+              │
+              ▼
+      stored on PROBATION ──── not used yet. One wrong verdict
+              │                must not poison every future scan.
+     seen again, independently
+              │
+              ▼
+          ACTIVE ──────────►  the next variant is caught in ~1ms
+                              instead of ~1500ms
+```
+
+It learns in the other direction too. When a human marks something safe in the review
+queue, similar content becomes *less* suspicious in future — which is how the false
+alarm rate stays at zero. Only humans can create "safe" memories; learning that
+something is harmless from unreviewed traffic is exactly how an attacker would poison it.
+
+Everything is stored locally in `~/.warden/`.
+
+### Top up its knowledge from public threat feeds
+
+```bash
+bunx @shivdev/agent-warden intel
+```
+
+Pulls recent prompt-injection examples from public research datasets, tests each one
+against *your* install, and seeds anything it misses into memory. Run it occasionally,
+or on a schedule.
+
+### Probe your own defences
+
+```bash
+bunx @shivdev/agent-warden redteam     # source repo only, needs an LLM key
+```
+
+Generates adversarial variants and reports what gets through. Anything that slips past
+becomes a test case.
 
 ---
 
