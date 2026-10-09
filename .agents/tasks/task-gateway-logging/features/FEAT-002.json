@@ -1,0 +1,28 @@
+{
+  "id": "FEAT-002",
+  "type": "feat",
+  "description": "CLI --quiet flag and shutdown summary. Add --quiet flag (and WARDEN_QUIET=1 env var) to the CLI, thread it through startWarden to startGateway. Add a shutdown summary that prints total scans, blocked count with attack types, allowed count, and average latency when the process exits. Depends on FEAT-001 for the scan stats tracker (getGatewayStats) and colors module.",
+  "status": "completed",
+  "steps": [
+    "1. Add --quiet flag parsing to src/cli.ts. In the switch/case arg parser, add a case for '--quiet' that sets a local `let quiet = false` to true. Also check `process.env.WARDEN_QUIET === '1'` as a fallback. Pass `quiet` into the startWarden() call — add it to the options object.",
+    "2. Update the USAGE string in src/cli.ts to document the --quiet flag under Options: '  --quiet                 Suppress per-scan logging (only startup banner and\\n                         blocks print). Also: WARDEN_QUIET=1'.",
+    "3. Update src/mcp.ts WardenOptions interface to add `quiet?: boolean`. In startWarden(), pass the quiet flag into the mergedConfig: `mergedConfig.quiet = options.quiet || process.env.WARDEN_QUIET === '1'`. This way it reaches startGateway(mergedConfig) which already reads config.quiet from FEAT-001.",
+    "4. Implement the shutdown summary in src/mcp.ts. Import getGatewayStats from './gateway/index.ts'. Import rule, bold, dim, green, red, yellow from './gateway/colors.ts'. In the existing `shutdown` closure inside startWarden(), BEFORE calling process.exit(0), call getGatewayStats() and print a summary block to stderr:\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🛡  WARDEN SESSION SUMMARY\n   Total scans:  42\n   Allowed:      38  (green)\n   Blocked:       3  (red) — indirect_injection, tool_abuse\n   Spotlighted:   1  (yellow)\n   Avg latency:  23ms\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nUse bold() for the title, green/red/yellow for the action counts, dim() for the latency line. If attackTypes is non-empty, append them after the blocked count. All via console.error.",
+    "5. Update the existing --help test in tests/cli.test.ts: add an assertion that stderr output from --help contains '--quiet'. Add a new test: '--quiet flag is accepted without error' — spawn CLI with ['--quiet', '--help'] and verify exit code 0 and stderr contains 'Usage'.",
+    "6. Verify the full integration by checking that --quiet is recognized, --help shows it, and the shutdown summary function does not crash when stats are empty (0 scans). The getGatewayStats() from FEAT-001 should handle empty stats gracefully (avgLatencyMs = 0 when no scans)."
+  ],
+  "acceptance_criteria": [
+    "--quiet flag is parsed in cli.ts and threaded through startWarden → startGateway",
+    "WARDEN_QUIET=1 env var also enables quiet mode",
+    "--help output documents the --quiet flag",
+    "Shutdown handler prints session summary with total scans, allowed, blocked (with attack types), spotlighted, avg latency",
+    "Summary uses ANSI colors via colors.ts (auto-disabled when not TTY)",
+    "Summary block is bordered by ━ rule lines",
+    "Running `bun test` passes all existing and new/updated tests"
+  ],
+  "verification": [
+    "bun test — all tests pass including updated tests/cli.test.ts"
+  ],
+  "blocked_reason": null,
+  "findings": "Added --quiet flag to cli.ts (also supports WARDEN_QUIET=1 env var), threaded through WardenOptions into startGateway config. Shutdown summary in mcp.ts prints total scans, allowed (green), blocked (red) with attack types, spotlighted (yellow), and avg latency (dim) bordered by ━ rule lines. All output via console.error. --help documents --quiet. New test confirms --quiet is accepted. All 332 tests pass."
+}

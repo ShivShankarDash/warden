@@ -18,6 +18,8 @@ Options:
   --config <path>        Path to .warden.json config file (auto-discovers
                          .warden.json and warden-mcp.json if omitted)
   --upstream-cmd <cmd>   Upstream MCP server command (repeatable)
+  --quiet                 Suppress per-scan logging (only startup banner and
+                         blocks print). Also: WARDEN_QUIET=1
   --api-only             Run the HTTP API server only (no MCP gateway)
   --port <n>             API server port (default: 0 for MCP mode, 3000 for
                          --api-only)
@@ -71,6 +73,7 @@ function printHelp() {
 const args = process.argv.slice(2);
 let configPath: string | undefined;
 let apiOnly = false;
+let quiet = process.env.WARDEN_QUIET === "1";
 let port: number | undefined;
 const upstreamCmds: string[] = [];
 
@@ -99,6 +102,9 @@ for (let i = 0; i < args.length; i++) {
     case "--api-only":
       apiOnly = true;
       break;
+    case "--quiet":
+      quiet = true;
+      break;
     case "--port":
       const p = args[++i];
       if (!p || isNaN(Number(p))) {
@@ -126,4 +132,5 @@ await startWarden({
   port,
   config,
   upstreamCmds: upstreamCmds.length ? upstreamCmds : undefined,
+  quiet,
 });

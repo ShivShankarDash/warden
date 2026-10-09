@@ -13,13 +13,15 @@ console.log = (...args: unknown[]) => console.error(...args);
 
 import { applyConfigToEnv, type GatewayConfig } from "./gateway/config.ts";
 import { startApiServer, stopApiServer } from "./api/index.ts";
-import { startGateway } from "./gateway/index.ts";
+import { startGateway, getGatewayStats } from "./gateway/index.ts";
+import { rule, bold, dim, green, red, yellow, emoji } from "./gateway/colors.ts";
 
 export interface WardenOptions {
   mode: "mcp" | "api-only";
   port?: number;
   config?: GatewayConfig;
   upstreamCmds?: string[];
+  quiet?: boolean;
 }
 
 export async function startWarden(options: WardenOptions) {
@@ -56,6 +58,7 @@ export async function startWarden(options: WardenOptions) {
     upstreams: { ...(config?.upstreams ?? {}) },
     policy: config?.policy,
     judge: config?.judge,
+    quiet: options.quiet || process.env.WARDEN_QUIET === "1",
   };
 
   if (upstreamCmds?.length) {
@@ -70,6 +73,21 @@ export async function startWarden(options: WardenOptions) {
 
   // Graceful shutdown on signals.
   const shutdown = () => {
+    // Print session summary before exiting.
+    const s = getGatewayStats();
+    console.error("");
+    console.error(rule());
+    console.error(`${emoji.shield}  ${bold("WARDEN SESSION SUMMARY")}`);
+    console.error(`   Total scans:  ${s.totalScans}`);
+    console.error(`   Allowed:      ${green(String(s.allowed))}`);
+    const blockedLine = s.attackTypes.length
+      ? `${red(String(s.blocked))} — ${s.attackTypes.join(", ")}`
+      : red(String(s.blocked));
+    console.error(`   Blocked:      ${blockedLine}`);
+    console.error(`   Spotlighted:  ${yellow(String(s.spotlighted))}`);
+    console.error(`   Avg latency:  ${dim(`${s.avgLatencyMs}ms`)}`);
+    console.error(rule());
+
     gateway.server.close().catch(() => {});
     stopApiServer();
     process.exit(0);

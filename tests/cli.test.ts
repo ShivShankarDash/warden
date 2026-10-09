@@ -33,6 +33,7 @@ describe("cli", () => {
     expect(exitCode).toBe(0);
     expect(stderr).toContain("warden-mcp");
     expect(stderr).toContain("Usage");
+    expect(stderr).toContain("--quiet");
     expect(stdout).toBe("");
   });
 
@@ -81,6 +82,15 @@ describe("cli", () => {
       "echo server2",
       "--help",
     ]);
+    const exitCode = await proc.exited;
+    const stderr = await new Response(proc.stderr).text();
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toContain("Usage");
+  });
+
+  test("--quiet flag is accepted without error", async () => {
+    const proc = spawnCli(["--quiet", "--help"]);
     const exitCode = await proc.exited;
     const stderr = await new Response(proc.stderr).text();
 
