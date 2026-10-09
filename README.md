@@ -119,7 +119,7 @@ Then replace your `mcp.json` with just Warden:
 ```json
 {
   "mcpServers": {
-    "warden": { "command": "bunx", "args": ["agent-warden"] }
+    "warden": { "command": "bunx", "args": ["@shivdev/agent-warden"] }
   }
 }
 ```
