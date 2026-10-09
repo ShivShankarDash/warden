@@ -282,6 +282,23 @@ const server = Bun.serve({
       },
     },
 
+    "/metrics/intel": {
+      GET: () => {
+        const db = getDb();
+        const sources = db
+          .query("SELECT source_id, last_fetched_at, items_fetched, errors, updated_at FROM intel_sources ORDER BY updated_at DESC")
+          .all() as { source_id: string; last_fetched_at: number | null; items_fetched: number; errors: number; updated_at: number }[];
+        const seeded = (
+          db.query("SELECT COUNT(*) as n FROM memory WHERE origin = 'seed' AND valid_to IS NULL").get() as { n: number }
+        ).n;
+        return Response.json({
+          sources,
+          totalSeeded: seeded,
+          coverageStats: coverageSummary(),
+        });
+      },
+    },
+
     "/metrics/memory-health": {
       GET: (req) => {
         const agentId = new URL(req.url).searchParams.get("agentId") ?? undefined;
