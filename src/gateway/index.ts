@@ -32,12 +32,137 @@ import {
 import { loadConfig, isHttpUpstream, type UpstreamSpec, type HttpUpstream, type GatewayConfig } from "./config.ts";
 import { scanContent } from "./scan.ts";
 import { sniff } from "../extract/sniff.ts";
-import type { SourceType } from "../types.ts";
+import type { Action, Finding, SourceType } from "../types.ts";
+import { red, green, yellow, dim, bold, cyan, rule, emoji } from "./colors.ts";
 
-const log = (...args: unknown[]) => console.error("[warden-gateway]", ...args);
+/* ─── Module-level scan stats ─────────────────────────────────────────── */
+
+const stats = {
+  totalScans: 0,
+  allowed: 0,
+  blocked: 0,
+  spotlighted: 0,
+  latencyMs: [] as number[],
+  attackTypes: new Set<string>(),
+};
+
+/** Returns a snapshot of gateway scan statistics. */
+export function getGatewayStats() {
+  return {
+    totalScans: stats.totalScans,
+    allowed: stats.allowed,
+    blocked: stats.blocked,
+    spotlighted: stats.spotlighted,
+    attackTypes: [...stats.attackTypes],
+    avgLatencyMs: stats.latencyMs.length
+      ? Math.round(stats.latencyMs.reduce((a, b) => a + b, 0) / stats.latencyMs.length)
+      : 0,
+  };
+}
+
+/* ─── Quiet mode ──────────────────────────────────────────────────────── */
+
+let isQuiet = false;
+
+/* ─── Rich logging helpers ────────────────────────────────────────────── */
 
 /** One session per gateway process, so the session tracker sees the whole conversation. */
 const SESSION_ID = `mcp-${crypto.randomUUID()}`;
+
+/**
+ * Log a per-scan result line to stderr.
+ *
+ * ALLOW lines are suppressed in quiet mode. BLOCK/QUARANTINE/HUMAN_REVIEW always print.
+ */
+function logScan(
+  scanNum: number,
+  toolName: string,
+  args: string,
+  action: Action,
+  riskScore: number,
+  findings: Finding[],
+  elapsedMs: number,
+): void {
+  const prefix = `${emoji.shield} [warden] Scan #${scanNum}: ${toolName}(${args})`;
+
+  switch (action) {
+    case "ALLOW": {
+      if (isQuiet) return;
+      console.error(`${prefix} → ${green(`${emoji.check} ALLOW`)} (risk ${riskScore.toFixed(2)}) ${dim(`${elapsedMs}ms`)}`);
+      break;
+    }
+    case "BLOCK":
+    case "QUARANTINE":
+    case "HUMAN_REVIEW": {
+      const attacks = [...new Set(findings.map((f) => f.attackType))].join(", ") || "n/a";
+      console.error(`${prefix} → ${red(`${emoji.block} ${action}`)} (${attacks}, ${riskScore.toFixed(2)}) ${dim(`${elapsedMs}ms`)}`);
+      if (findings.length) {
+        console.error(`  Reason: ${findings[0].reason}`);
+      }
+      console.error("  Content replaced with safety message.");
+      break;
+    }
+    case "SPOTLIGHT": {
+      if (isQuiet) return;
+      console.error(`${prefix} → ${yellow(`${emoji.warn} SPOTLIGHT`)} (risk ${riskScore.toFixed(2)}) ${dim(`${elapsedMs}ms`)}`);
+      console.error("  Passed with data boundary wrapper.");
+      break;
+    }
+    default: {
+      if (isQuiet) return;
+      console.error(`${prefix} → ${action} (risk ${riskScore.toFixed(2)}) ${dim(`${elapsedMs}ms`)}`);
+      break;
+    }
+  }
+}
+
+/** Log a tool-description vet result at registration time. */
+function logToolVet(
+  toolName: string,
+  action: Action,
+  riskScore: number,
+  findings: Finding[],
+  elapsedMs: number,
+): void {
+  const prefix = `${emoji.shield} [warden] Tool "${toolName}"`;
+
+  if (action === "ALLOW") {
+    console.error(`${prefix} — ${green(`${emoji.check} CLEAN`)} ${dim(`(${elapsedMs}ms)`)}`);
+  } else if (action === "BLOCK" || action === "QUARANTINE") {
+    const attacks = [...new Set(findings.map((f) => f.attackType))].join(", ") || "n/a";
+    console.error(`${prefix} — ${red(`${emoji.block} BLOCKED`)} (${attacks}, ${riskScore.toFixed(2)}) ${dim(`${elapsedMs}ms`)}`);
+    if (findings.length) {
+      console.error(`  Reason: ${findings[0].reason}`);
+    }
+  } else {
+    console.error(`${prefix} — ${yellow(`${action}`)} (risk ${riskScore.toFixed(2)}) ${dim(`${elapsedMs}ms`)}`);
+  }
+}
+
+/** Print the startup banner after upstreams are connected and tools are vetted. */
+function logStartup(
+  upstreams: Upstream[],
+  exposed: Tool[],
+  wardenUrl: string,
+): void {
+  const upstreamList = upstreams
+    .map((u) => `${u.name} (${u.tools.length} tools)`)
+    .join(", ");
+
+  const toolNames = exposed.map((t) => dim(t.name)).join(", ");
+  const modeLabel = isQuiet ? "quiet" : "verbose";
+
+  console.error(rule());
+  console.error(`${emoji.shield}  ${bold("WARDEN — AI Agent Firewall")}`);
+  console.error(`   Scanning: tool descriptions + tool results`);
+  console.error(`   API: ${cyan(wardenUrl)}`);
+  console.error(`   Upstreams: ${upstreamList}`);
+  console.error(`   Exposed tools: ${toolNames}`);
+  console.error(`   Mode: ${modeLabel}`);
+  console.error(rule());
+}
+
+/* ─── Helpers ─────────────────────────────────────────────────────────── */
 
 function textOf(result: unknown): string {
   const content = (result as { content?: { type?: string; text?: string }[] })?.content ?? [];
@@ -78,13 +203,13 @@ async function connectHttp(name: string, spec: HttpUpstream): Promise<Client> {
           ? new StreamableHTTPClientTransport(url, { requestInit })
           : new SSEClientTransport(url, { requestInit });
       await client.connect(transport);
-      if (!spec.transport) log(`${name}: using ${kind} transport`);
+      if (!spec.transport) console.error(`[warden-gateway] ${name}: using ${kind} transport`);
       return client;
     } catch (e) {
       lastError = e;
       await client.close().catch(() => {});
       if (!spec.transport && kind === "http") {
-        log(`${name}: streamable http failed, trying sse`);
+        console.error(`[warden-gateway] ${name}: streamable http failed, trying sse`);
       }
     }
   }
@@ -110,10 +235,10 @@ async function connectUpstream(name: string, spec: UpstreamSpec): Promise<Upstre
     }
 
     const listed = await client.listTools();
-    log(`connected ${name} (${listed.tools.length} tools)`);
+    console.error(`[warden-gateway] connected ${name} (${listed.tools.length} tools)`);
     return { name, client, tools: listed.tools };
   } catch (e) {
-    log(`FAILED to connect ${name}: ${e instanceof Error ? e.message : e}`);
+    console.error(`[warden-gateway] FAILED to connect ${name}: ${e instanceof Error ? e.message : e}`);
     return null;
   }
 }
@@ -163,22 +288,22 @@ async function vetToolDescriptions(tools: Tool[]): Promise<Tool[]> {
   for (const tool of tools) {
     // Skip scanning for whitelisted tools — these are from known-good MCP servers.
     if (TOOL_WHITELIST.has(tool.name)) {
+      logToolVet(tool.name, "ALLOW", 0, [], 0);
       safe.push(tool);
       continue;
     }
 
     const text = `${tool.name}\n${tool.description ?? ""}`;
+    const t0 = performance.now();
     const verdict = await scanContent(text, "mcp_tool_description", SESSION_ID);
+    const elapsedMs = Math.round(performance.now() - t0);
+
+    stats.totalScans++;
+
+    logToolVet(tool.name, verdict.action, verdict.riskScore, verdict.findings, elapsedMs);
 
     if (verdict.action === "BLOCK" || verdict.action === "QUARANTINE") {
-      log(
-        `WITHHELD tool "${tool.name}" — poisoned description ` +
-          `(risk ${verdict.riskScore.toFixed(2)}: ${[...new Set(verdict.findings.map((f) => f.attackType))].join(", ")})`
-      );
       continue;
-    }
-    if (verdict.action !== "ALLOW") {
-      log(`flagged tool "${tool.name}" (${verdict.action}, risk ${verdict.riskScore.toFixed(2)})`);
     }
     safe.push(tool);
   }
@@ -186,16 +311,22 @@ async function vetToolDescriptions(tools: Tool[]): Promise<Tool[]> {
 }
 
 export async function startGateway(config: GatewayConfig) {
+  isQuiet = config.quiet ?? (process.env.WARDEN_QUIET === "1");
+
   const entries = Object.entries(config.upstreams);
-  log(`starting with ${entries.length} upstream(s)`);
+  console.error(`[warden-gateway] starting with ${entries.length} upstream(s)`);
 
   const connected = (
     await Promise.all(entries.map(([name, spec]) => connectUpstream(name, spec)))
   ).filter((u): u is Upstream => u !== null);
 
-  if (!connected.length) log("WARNING: no upstreams connected — host will see no tools");
+  if (!connected.length) console.error("[warden-gateway] WARNING: no upstreams connected — host will see no tools");
 
   const exposed = await vetToolDescriptions(registerTools(connected));
+
+  // Startup banner — replaces the old "ready — exposing ..." line.
+  const wardenUrl = process.env.WARDEN_URL ?? "http://localhost:3000";
+  logStartup(connected, exposed, wardenUrl);
 
   const server = new Server(
     { name: "warden", version: "0.1.0" },
@@ -227,19 +358,56 @@ export async function startGateway(config: GatewayConfig) {
     // Scan point 2: the tool result, before it reaches the model's context. This is
     // the moment that matters — once this text is in context, injection has landed.
     const text = textOf(result);
-    if (!text) return result as { content: unknown[]; isError?: boolean };
+
+    // Build a truncated summary of the arguments for the log line.
+    const argsSummary = (() => {
+      try {
+        const s = JSON.stringify(req.params.arguments ?? {});
+        return s.length > 60 ? s.slice(0, 57) + "..." : s;
+      } catch {
+        return "{}";
+      }
+    })();
+
+    if (!text) {
+      stats.totalScans++;
+      stats.allowed++;
+      console.error(`${emoji.shield} [warden] Scan #${stats.totalScans}: ${toolName}(${argsSummary}) → ${dim("(empty result, skipped)")}`);
+      return result as { content: unknown[]; isError?: boolean };
+    }
 
     // Tool results are whatever the upstream returned — HTML from a browser tool,
     // markdown from a docs tool, JSON from an API. Hardcoding one source routes
     // every result to the wrong parser, so let the content decide.
     const sniffed = sniff(text);
     const source: SourceType = sniffed === "text" ? "api_json" : (sniffed as SourceType);
+
+    const t0 = performance.now();
     const verdict = await scanContent(text, source, SESSION_ID);
+    const elapsedMs = Math.round(performance.now() - t0);
+
+    // Update stats.
+    stats.totalScans++;
+    stats.latencyMs.push(elapsedMs);
+
+    switch (verdict.action) {
+      case "ALLOW":
+        stats.allowed++;
+        break;
+      case "BLOCK":
+      case "QUARANTINE":
+      case "HUMAN_REVIEW":
+        stats.blocked++;
+        for (const f of verdict.findings) stats.attackTypes.add(f.attackType);
+        break;
+      case "SPOTLIGHT":
+        stats.spotlighted++;
+        break;
+    }
+
+    logScan(stats.totalScans, toolName, argsSummary, verdict.action, verdict.riskScore, verdict.findings, elapsedMs);
+
     if (verdict.action !== "ALLOW" && verdict.replacement) {
-      log(
-        `${verdict.action} ${toolName} result (risk ${verdict.riskScore.toFixed(2)}): ` +
-          `${[...new Set(verdict.findings.map((f) => f.attackType))].join(", ") || "n/a"}`
-      );
       return {
         content: [{ type: "text" as const, text: verdict.replacement }],
         isError: verdict.action === "BLOCK" || verdict.action === "QUARANTINE",
@@ -250,7 +418,6 @@ export async function startGateway(config: GatewayConfig) {
   });
 
   await server.connect(new StdioServerTransport());
-  log(`ready — exposing ${exposed.length} tools: ${exposed.map((t) => t.name).join(", ")}`);
 
   return { server, upstreams: connected };
 }
@@ -258,7 +425,7 @@ export async function startGateway(config: GatewayConfig) {
 if (import.meta.main) {
   const config = await loadConfig();
   startGateway(config).catch((e) => {
-    log(`fatal: ${e instanceof Error ? e.stack : e}`);
+    console.error(`[warden-gateway] fatal: ${e instanceof Error ? e.stack : e}`);
     process.exit(1);
   });
 }

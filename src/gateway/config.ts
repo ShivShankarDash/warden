@@ -50,6 +50,8 @@ export interface GatewayConfig {
   upstreams: Record<string, UpstreamSpec>;
   policy?: PolicyConfig;
   judge?: JudgeConfig;
+  /** Suppress per-scan ALLOW lines. Blocks, startup banner, and errors always print. */
+  quiet?: boolean;
 }
 
 const DEFAULT_PATHS = [".warden.json", "warden-mcp.json"];
