@@ -8,8 +8,6 @@
 
 import { timingSafeEqual } from "node:crypto";
 
-const encoder = new TextEncoder();
-
 export function requireAuth(req: Request): Response | null {
   const raw = process.env.WARDEN_API_KEYS;
   if (!raw) return null; // auth disabled — local dev

@@ -248,7 +248,10 @@ export async function startApiServer(port: number) {
       },
 
       "/canary": {
-        POST: () => Response.json({ canary: generateCanary() }),
+        POST: async (req) => {
+          const _auth = requireAuth(req); if (_auth) return _auth;
+          return Response.json({ canary: generateCanary() });
+        },
       },
 
       "/ingest": {
@@ -276,6 +279,7 @@ export async function startApiServer(port: number) {
           return Response.json({ sessionId: id, ...state });
         },
         DELETE: (req) => {
+          const _auth = requireAuth(req); if (_auth) return _auth;
           const { id } = req.params as { id: string };
           resetSession(id);
           return Response.json({ ok: true });
@@ -496,7 +500,7 @@ export async function startApiServer(port: number) {
         const upgraded = server.upgrade(req);
         if (upgraded) return;
       }
-      return new Response("Not found", { status: 404 });
+      return jsonError("not found", 404);
     },
   });
 
