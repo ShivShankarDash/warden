@@ -1,0 +1,7 @@
+{
+  "task_id": "task-mcp-package",
+  "task_description": "Package Warden as a self-contained npm/bunx package (warden-mcp) that anyone can install and run as an MCP server in Kiro, Claude Desktop, or any MCP host with a single command. Eliminates the two-process requirement by starting the API server in-process on a random port alongside the MCP gateway.",
+  "status": "completed",
+  "feature_order": ["FEAT-001", "FEAT-002"],
+  "blocked_reason": null
+}
