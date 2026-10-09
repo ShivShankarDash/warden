@@ -1,7 +1,15 @@
 {
-  "name": "warden",
+  "name": "warden-mcp",
   "version": "0.1.0",
-  "private": true,
+  "bin": {
+    "warden-mcp": "./src/cli.ts"
+  },
+  "files": [
+    "src/",
+    "policies/",
+    "dashboard/",
+    "README.md"
+  ],
   "scripts": {
     "dev": "bun --hot src/api/index.ts",
     "eval": "bun eval/runner.ts",
