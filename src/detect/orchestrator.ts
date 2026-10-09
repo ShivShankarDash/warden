@@ -168,6 +168,7 @@ export async function scan(req: ScanRequest): Promise<ScanResult> {
   let classifierScore = 0;
   let benignScore: number | null = null;
   let layaSkipJudge = false;
+  let usedLaya = false;
   if (ruleScore < HIGH_CONFIDENCE) {
     const t3 = performance.now();
 
@@ -185,6 +186,7 @@ export async function scan(req: ScanRequest): Promise<ScanResult> {
     } else {
       // Laya responded — use its result.
       clf = laya;
+      usedLaya = true;
       // When Laya is confident, the judge adds latency without improving
       // accuracy. The base model's probabilities are well-calibrated (unlike
       // the fine-tuned checkpoint), so these thresholds are safe.
@@ -236,7 +238,7 @@ export async function scan(req: ScanRequest): Promise<ScanResult> {
   // outside its training distribution. Unlike a language check this also covers
   // adversarial suffixes and novel wordings.
   const classifierUncertain =
-    benignScore !== null && benignScore < BENIGN_CERTAINTY_THRESHOLD;
+    benignScore !== null && benignScore < (usedLaya ? 0.80 : BENIGN_CERTAINTY_THRESHOLD);
   const referred =
     preJudgeScore < JUDGE_THRESHOLD && (suspectsJailbreak(scanText) || classifierUncertain);
 
@@ -489,6 +491,11 @@ export async function scan(req: ScanRequest): Promise<ScanResult> {
     for (const at of attackTypesInFindings) {
       recordCoverageOutcome(at, wasDetected, agentId);
     }
+  }
+
+  // Record a true-negative data point when an indirect scan found nothing.
+  if (attackTypesInFindings.length === 0 && INDIRECT_SOURCES.includes(req.source)) {
+    recordCoverageOutcome("_clean_scan", true, req.agentId ?? "default");
   }
 
   trace.push({ stage: "total", ms: performance.now() - startTotal });

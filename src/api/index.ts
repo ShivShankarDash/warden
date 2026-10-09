@@ -1,4 +1,5 @@
 import { scan } from "../detect/orchestrator.ts";
+import { layaStatus } from "../detect/laya.ts";
 import { getDb, insertScanResult, getScanResult } from "../store/db.ts";
 import { initWarden } from "../init.ts";
 import { getSession, resetSession } from "../detect/session.ts";
@@ -426,6 +427,7 @@ export async function startApiServer(port: number) {
             bySource,
             evaluation: await latestEvalSummary(),
             memory: memoryStats(),
+            laya: layaStatus(),
           });
         },
       },

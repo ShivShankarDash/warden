@@ -3,6 +3,16 @@ import type { Finding } from "../types.ts";
 const LAYA_URL = process.env.LAYA_URL ?? "http://localhost:8111";
 const LAYA_TIMEOUT = Number(process.env.LAYA_TIMEOUT ?? 5000);
 
+// --- Health monitoring state ---
+let _available = false;
+let _lastCheck = 0;
+let _consecutiveFailures = 0;
+
+/** Snapshot of the Laya sidecar's health as seen by this process. */
+export function layaStatus() {
+  return { available: _available, lastCheck: _lastCheck, consecutiveFailures: _consecutiveFailures };
+}
+
 export interface LayaResult {
   findings: Finding[];
   benignScore: number | null;
@@ -35,8 +45,20 @@ export async function classifyWithLaya(
     clearTimeout(timeoutId);
 
     if (!res.ok) {
+      const wasFirst = _consecutiveFailures === 0;
+      _consecutiveFailures++;
+      _available = false;
+      _lastCheck = Date.now();
+      if (wasFirst) {
+        console.warn("[warden] Laya sidecar unavailable, falling back to PG2");
+      }
       return { findings: [], benignScore: null, injectionProbability: 0 };
     }
+
+    // Successful response — mark healthy.
+    _available = true;
+    _consecutiveFailures = 0;
+    _lastCheck = Date.now();
 
     const data = (await res.json()) as {
       injection_probability: number;
@@ -66,6 +88,13 @@ export async function classifyWithLaya(
     };
   } catch {
     // Server down, timeout, network error, bad JSON — all handled identically.
+    const wasFirst = _consecutiveFailures === 0;
+    _consecutiveFailures++;
+    _available = false;
+    _lastCheck = Date.now();
+    if (wasFirst) {
+      console.warn("[warden] Laya sidecar unavailable, falling back to PG2");
+    }
     return { findings: [], benignScore: null, injectionProbability: 0 };
   }
 }
