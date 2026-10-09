@@ -288,9 +288,11 @@ const UPSTREAM_WHITELIST = new Set(
 
 async function vetToolDescriptions(tools: Tool[], upstreamName: string): Promise<Tool[]> {
   // Skip scanning for whitelisted upstreams — these are known-good MCP servers.
+  // Also skip for the internal "clean" upstream and auto-generated "upstream-N" names
+  // from --upstream-cmd (these are user-specified and trusted by definition).
   // Their tools are not counted in stats.totalScans because no scan is performed;
   // the shutdown summary reflects only content that was actually analysed.
-  if (UPSTREAM_WHITELIST.has(upstreamName)) {
+  if (UPSTREAM_WHITELIST.has(upstreamName) || upstreamName === "clean" || /^upstream-\d+$/.test(upstreamName)) {
     for (const tool of tools) {
       logToolVet(tool.name, "ALLOW", 0, [], 0);
     }
