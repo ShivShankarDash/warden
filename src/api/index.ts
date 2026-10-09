@@ -8,12 +8,14 @@ import { recordTaint } from "../guard/taint.ts";
 import { enqueueReview, pendingReviews, getReview, markResolved } from "../store/review.ts";
 import { addReference, addSafeReference } from "../detect/similarity.ts";
 import { memoryStats, recentMemories, recentPromotions } from "../store/memory.ts";
-import type { ToolCallCheck, Action, ScanResult } from "../types.ts";
+import type { ToolCallCheck, Action, ScanResult, SourceType } from "../types.ts";
 import { analytics, decidedBy, isRange, recentScans } from "./analytics.ts";
 import { coverageSummary, coverageGaps } from "../store/coverage.ts";
 import { memoryHealth } from "../store/lifecycle.ts";
 import { explainVerdict } from "../explain/verdict.ts";
 import { getReputation } from "../store/reputation.ts";
+import { requireAuth } from "./auth.ts";
+import { checkRateLimit } from "./ratelimit.ts";
 import dashboard from "../../dashboard/index.html";
 
 /** Latest saved eval run, for the headline accuracy figures the dashboard shows. */
@@ -54,6 +56,31 @@ function latencyPercentiles(limit = 500) {
   return { p50: at(0.5), p95: at(0.95), samples: totals.length };
 }
 
+const MAX_BODY = 1_048_576; // 1 MB
+
+const VALID_SOURCES: readonly string[] = [
+  "user_message", "html", "email", "pdf", "docx", "markdown",
+  "api_json", "code", "ocr_text", "image", "mcp_tool_description", "a2a_message",
+];
+
+function checkBodySize(req: Request): Response | null {
+  const cl = Number(req.headers.get("content-length") ?? 0);
+  if (cl > MAX_BODY) {
+    return new Response(
+      JSON.stringify({ error: "request too large", max: "1MB" }),
+      { status: 413, headers: { "Content-Type": "application/json" } },
+    );
+  }
+  return null;
+}
+
+function jsonError(msg: string, status = 400) {
+  return new Response(
+    JSON.stringify({ error: msg }),
+    { status, headers: { "Content-Type": "application/json" } },
+  );
+}
+
 /** The running Bun server instance, set by startApiServer(). */
 let _server: ReturnType<typeof Bun.serve> | null = null;
 
@@ -65,7 +92,29 @@ export async function startApiServer(port: number) {
     routes: {
       "/scan": {
         POST: async (req) => {
-          const body = await req.json();
+          const _auth = requireAuth(req); if (_auth) return _auth;
+          const _rl = checkRateLimit(req); if (_rl) return _rl;
+          const _size = checkBodySize(req); if (_size) return _size;
+
+          let body: any;
+          try { body = await req.json(); } catch { return jsonError("invalid JSON"); }
+
+          if (!body.content || typeof body.content !== "string") {
+            return jsonError("content is required and must be a string");
+          }
+          if (body.content.length > MAX_BODY) {
+            return jsonError("content exceeds 1MB limit");
+          }
+          if (!body.source || !VALID_SOURCES.includes(body.source)) {
+            return new Response(
+              JSON.stringify({ error: "invalid source", valid: VALID_SOURCES }),
+              { status: 400, headers: { "Content-Type": "application/json" } },
+            );
+          }
+          if (!body.agentId || typeof body.agentId !== "string") {
+            return jsonError("agentId is required");
+          }
+
           const result = await scan(body);
           insertScanResult({
             id: result.id,
@@ -156,18 +205,44 @@ export async function startApiServer(port: number) {
 
       "/scan-output": {
         POST: async (req) => {
-          const body = (await req.json()) as {
-            content: string;
-            canaries?: string[];
-            allowedHosts?: string[];
-          };
+          const _auth = requireAuth(req); if (_auth) return _auth;
+          const _rl = checkRateLimit(req); if (_rl) return _rl;
+          const _size = checkBodySize(req); if (_size) return _size;
+
+          let body: any;
+          try {
+            body = (await req.json()) as {
+              content: string;
+              canaries?: string[];
+              allowedHosts?: string[];
+            };
+          } catch { return jsonError("invalid JSON"); }
+
           return Response.json(scanOutput(body));
         },
       },
 
       "/check-tool": {
         POST: async (req) => {
-          const body = (await req.json()) as ToolCallCheck & { allowedTools?: string[] };
+          const _auth = requireAuth(req); if (_auth) return _auth;
+          const _rl = checkRateLimit(req); if (_rl) return _rl;
+          const _size = checkBodySize(req); if (_size) return _size;
+
+          let body: any;
+          try {
+            body = (await req.json()) as ToolCallCheck & { allowedTools?: string[] };
+          } catch { return jsonError("invalid JSON"); }
+
+          if (!body.agentId || typeof body.agentId !== "string") {
+            return jsonError("agentId is required");
+          }
+          if (!body.sessionId || typeof body.sessionId !== "string") {
+            return jsonError("sessionId is required");
+          }
+          if (!body.tool || typeof body.tool !== "string") {
+            return jsonError("tool is required");
+          }
+
           return Response.json(checkToolCall(body));
         },
       },
@@ -178,7 +253,13 @@ export async function startApiServer(port: number) {
 
       "/ingest": {
         POST: async (req) => {
-          const body = await req.json();
+          const _auth = requireAuth(req); if (_auth) return _auth;
+          const _rl = checkRateLimit(req); if (_rl) return _rl;
+          const _size = checkBodySize(req); if (_size) return _size;
+
+          let body: any;
+          try { body = await req.json(); } catch { return jsonError("invalid JSON"); }
+
           const result = await scan({ ...body, agentId: body.agentId ?? "rag" });
           return Response.json({
             trustLabel: result.action === "ALLOW" ? "trusted" : "untrusted",
@@ -269,8 +350,20 @@ export async function startApiServer(port: number) {
 
       "/review/:id": {
         POST: async (req) => {
+          const _auth = requireAuth(req); if (_auth) return _auth;
+          const _size = checkBodySize(req); if (_size) return _size;
+
           const { id } = req.params as { id: string };
-          const body = (await req.json()) as { decision: "attack" | "safe" | "dismiss"; note?: string };
+
+          let body: any;
+          try {
+            body = (await req.json()) as { decision: "attack" | "safe" | "dismiss"; note?: string };
+          } catch { return jsonError("invalid JSON"); }
+
+          const validDecisions = ["attack", "safe", "dismiss"];
+          if (!body.decision || !validDecisions.includes(body.decision)) {
+            return jsonError("decision is required and must be one of: attack, safe, dismiss");
+          }
 
           const item = getReview(id);
           if (!item) return Response.json({ error: "unknown review item" }, { status: 404 });
