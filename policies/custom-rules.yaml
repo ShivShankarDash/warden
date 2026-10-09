@@ -1,0 +1,33 @@
+# Custom detection rules — operator-defined extensions to the built-in rule engine.
+#
+# Each rule needs:
+#   name          — human-readable label (appears in findings)
+#   pattern       — regex string (compiled with /i flag automatically)
+#   attack_type   — one of: instruction_override, role_change, secret_extraction,
+#                   tool_abuse, credential_theft, context_poisoning,
+#                   multi_step_jailbreak, encoded_instructions, indirect_injection
+#   confidence    — 0.0–1.0, how certain this pattern indicates an attack
+#   source_filter — (optional) list of source types this rule applies to;
+#                   omit to match all sources
+#
+# Hot-reload: changes to this file are picked up automatically on the next scan.
+
+rules:
+  - name: block-competitor-mention
+    pattern: "switch\\s+to\\s+(competitor|rival)\\s+(product|service|platform)"
+    attack_type: context_poisoning
+    confidence: 0.75
+
+  - name: block-internal-domain
+    pattern: "https?://[\\w.-]+\\.internal\\.corp"
+    attack_type: credential_theft
+    confidence: 0.80
+    source_filter:
+      - html
+      - email
+      - markdown
+
+  - name: block-confidential-header
+    pattern: "CONFIDENTIAL:\\s+DO\\s+NOT\\s+SHARE"
+    attack_type: secret_extraction
+    confidence: 0.70
