@@ -13,6 +13,7 @@ console.log = (...args: unknown[]) => console.error(...args);
 
 import { applyConfigToEnv, type GatewayConfig } from "./gateway/config.ts";
 import { startApiServer, stopApiServer, onScan } from "./api/index.ts";
+import { ensureLayaRunning, stopLaya, reportClassifier, type SidecarResult } from "./laya-sidecar.ts";
 import { startGateway, getGatewayStats } from "./gateway/index.ts";
 import { rule, bold, dim, green, red, yellow, cyan, emoji } from "./gateway/colors.ts";
 
@@ -29,7 +30,7 @@ export interface WardenOptions {
  * to send a first scan, because a server that prints only "listening on 3000" leaves
  * someone guessing what to do next.
  */
-function printApiBanner(port: number): void {
+function printApiBanner(port: number, laya: SidecarResult): void {
   const url = `http://localhost:${port}`;
   console.error("");
   console.error(rule());
@@ -37,6 +38,7 @@ function printApiBanner(port: number): void {
   console.error("");
   console.error(`   Dashboard   ${cyan(url)}`);
   console.error(`   API         ${dim(`POST ${url}/scan`)}`);
+  reportClassifier(laya);
   console.error("");
   console.error(`   ${dim("Try it:")}`);
   console.error(dim(`   curl -X POST ${url}/scan -H 'Content-Type: application/json' \\`));
@@ -57,6 +59,12 @@ export async function startWarden(options: WardenOptions) {
 
   // When WARDEN_URL is already set (pointing at a remote server), skip the local
   // API server entirely — the gateway will send scans to the remote instance.
+  // Start the Laya sidecar first: it is the primary classifier, and bringing it up
+  // after the server is accepting traffic would mean early scans silently use the
+  // weaker fallback.
+  const layaScript = new URL("../models/serve_laya.py", import.meta.url).pathname;
+  const laya: SidecarResult = await ensureLayaRunning(layaScript);
+
   const remoteUrl = process.env.WARDEN_URL;
   let apiServer: Awaited<ReturnType<typeof startApiServer>> | null = null;
   let actualPort: number | undefined;
@@ -76,7 +84,7 @@ export async function startWarden(options: WardenOptions) {
     // In MCP mode the gateway prints each scan because it sees the tool calls.
     // Over HTTP there is no equivalent, so without this the terminal stays silent
     // no matter how much traffic the server handles.
-    if (actualPort) printApiBanner(actualPort);
+    if (actualPort) printApiBanner(actualPort, laya);
     const stats = { total: 0, allowed: 0, blocked: 0, flagged: 0, totalMs: 0 };
     const attackTypes = new Set<string>();
 
@@ -170,6 +178,7 @@ export async function startWarden(options: WardenOptions) {
     console.error(rule());
 
     gateway.server.close().catch(() => {});
+    stopLaya();
     stopApiServer();
     process.exit(0);
   };

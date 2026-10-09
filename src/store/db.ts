@@ -1,7 +1,31 @@
 import { Database } from "bun:sqlite";
 import type { Finding, ScanResult } from "../types.ts";
 
-const DB_PATH = process.env.DB_PATH ?? "./warden.db";
+/**
+ * Where the database lives.
+ *
+ * Defaults to ~/.warden/warden.db rather than ./warden.db because an MCP host
+ * spawns this process with a working directory of its own choosing. A relative
+ * path means the database is created wherever the host happened to start —
+ * littering the user's project folders, and silently losing learned memory and
+ * review history the moment they open a different project. A fixed location in the
+ * home directory keeps one database per user, which is what a CLI tool should do.
+ *
+ * DB_PATH still overrides, which is how the tests and eval keep their own files.
+ */
+function defaultDbPath(): string {
+  const home = process.env.HOME ?? process.env.USERPROFILE;
+  if (!home) return "./warden.db"; // no home directory — fall back to cwd
+  const dir = `${home}/.warden`;
+  try {
+    require("node:fs").mkdirSync(dir, { recursive: true });
+    return `${dir}/warden.db`;
+  } catch {
+    return "./warden.db"; // unwritable home — better than failing to start
+  }
+}
+
+const DB_PATH = process.env.DB_PATH ?? defaultDbPath();
 
 let _db: Database | null = null;
 

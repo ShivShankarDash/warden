@@ -6,9 +6,11 @@
   },
   "files": [
     "src/",
+    "models/",
     "policies/",
     "dashboard/",
-    "README.md"
+    "README.md",
+    "DEVELOPER.md"
   ],
   "scripts": {
     "dev": "bun --hot src/api/index.ts",

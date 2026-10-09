@@ -22,8 +22,33 @@ Warden sits in front of the agent and checks that content first.
 ```
 
 **Measured on 253 test cases:** catches **83.8%** of attacks with **zero false
-alarms** on legitimate content. The zero matters as much as the 83.8 — a security
+alarms** on legitimate content (77.1% without the optional Laya detector). The zero matters as much as the 83.8 — a security
 tool that blocks real work gets switched off.
+
+---
+
+## What gets installed, and why
+
+Warden sets itself up on first run. Nothing is installed silently — here's the full
+list up front.
+
+| What | Size | Why | Required? |
+|---|---|---|---|
+| **Bun** | ~90MB | The runtime. Warden uses Bun's built-in SQLite, so Node can't run it. | **Yes** — you install this |
+| **Detection models** | ~50MB | Downloaded on first start. Run locally, nothing leaves your machine. | Yes, automatic |
+| **Python venv + `laya`** | ~1.2GB model | The main detector. Created at `~/.warden/venv` — **your system Python is never touched.** | No, but strongly recommended |
+
+**Why Laya matters:** without it Warden catches **~7% fewer attacks** and calls the
+paid LLM judge **about twice as often**. Warden installs it automatically on first
+run and tells you exactly what it's doing. If Python isn't available or the install
+fails, Warden still runs on the built-in classifier and says so.
+
+```bash
+WARDEN_NO_LAYA_INSTALL=1   # skip the install, use the built-in classifier
+WARDEN_NO_LAYA=1           # don't even look for it
+```
+
+Everything lives in `~/.warden/`. Delete that folder to remove it all.
 
 ---
 
@@ -166,17 +191,23 @@ Warden works offline. Steps 1–5 and 7 run locally with no network calls. You l
 the judge, which costs a few points of accuracy and means some false alarms that the
 judge would have cleared now reach a person instead. Nothing breaks.
 
-### The Laya classifier (optional)
+### The Laya classifier
 
-Step 4 can use a stronger model via a small Python service:
+Warden starts this for you on first run — see *What gets installed* above. You only
+need this section if you want to run it yourself:
 
 ```bash
-python3 -m venv .venv && .venv/bin/pip install laya
-.venv/bin/python models/serve_laya.py       # runs on port 8111
+python3 -m venv ~/.warden/venv
+~/.warden/venv/bin/pip install laya
+~/.warden/venv/bin/python models/serve_laya.py    # port 8111
 ```
 
-Warden uses it automatically if it's running, and falls back to the built-in model if
-it isn't. No configuration needed either way.
+Warden detects an already-running sidecar and uses it. To point at one on another
+machine, set `LAYA_URL=http://host:8111`.
+
+**With Laya: 83.8% detection, 18.6% of scans reach the judge.**
+**Without it: 77.1% detection, 34.0% reach the judge.** Measured on the same 253
+cases — the second number matters because the judge is the slow, paid stage.
 
 ---
 

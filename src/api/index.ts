@@ -86,6 +86,40 @@ function jsonError(msg: string, status = 400) {
 /** The running Bun server instance, set by startApiServer(). */
 let _server: ReturnType<typeof Bun.serve> | null = null;
 
+/**
+ * Observers notified after every scan.
+ *
+ * The MCP gateway logs scans itself because it sees each tool call directly. Scans
+ * that arrive over HTTP have no such path, so running `--api-only` showed nothing on
+ * the terminal no matter how much traffic it handled. This lets the CLI subscribe
+ * without the API layer needing to know anything about terminal output.
+ */
+export interface ScanObservation {
+  source: string;
+  action: string;
+  riskScore: number;
+  attackTypes: string[];
+  elapsedMs: number;
+  preview: string;
+}
+type ScanObserver = (o: ScanObservation) => void;
+const scanObservers: ScanObserver[] = [];
+
+export function onScan(fn: ScanObserver): () => void {
+  scanObservers.push(fn);
+  return () => {
+    const i = scanObservers.indexOf(fn);
+    if (i >= 0) scanObservers.splice(i, 1);
+  };
+}
+
+function notifyScan(o: ScanObservation): void {
+  // An observer must never be able to break a scan response.
+  for (const fn of scanObservers) {
+    try { fn(o); } catch { /* ignore */ }
+  }
+}
+
 export async function startApiServer(port: number) {
   await initWarden();
 
@@ -118,7 +152,16 @@ export async function startApiServer(port: number) {
             return jsonError("agentId is required");
           }
 
+          const _scanStart = performance.now();
           const result = await scan(body);
+          notifyScan({
+            source: body.source,
+            action: result.action,
+            riskScore: result.riskScore,
+            attackTypes: [...new Set(result.findings.map((f: { attackType: string }) => f.attackType))],
+            elapsedMs: performance.now() - _scanStart,
+            preview: String(body.content).replace(/\s+/g, " ").slice(0, 60),
+          });
           insertScanResult({
             id: result.id,
             agentId: body.agentId ?? "default",
