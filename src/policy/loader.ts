@@ -35,14 +35,43 @@ function envOverride(key: string, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
+/**
+ * Agent ids that may be used to name a policy file.
+ *
+ * The id was interpolated straight into `./policies/${agentId}.yaml`, so it selected
+ * any .yaml on the filesystem. An attacker who controls the id — a multi-tenant
+ * caller, or anything that forwards a value from a request — could point it at a file
+ * they could write and define their own policy. With `failMode: open` and thresholds
+ * above 1.0, no score can reach them and the firewall stops blocking. Measured on the
+ * same payload: agentId "normal-agent" gave BLOCK 0.95, and
+ * "../../../../tmp/wprobe/evil" gave HUMAN_REVIEW 0.95 against a planted file.
+ *
+ * One leading alphanumeric, then word characters, dot, or dash. That admits every
+ * real agent name and no path: no slash, no "..", no absolute path, no NUL.
+ */
+const SAFE_AGENT_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+
+/** Bounded so an attacker-chosen id cannot grow the map without limit. */
+const MAX_CACHED_POLICIES = 512;
+
 export async function loadPolicy(agentId: string): Promise<Policy> {
   const cached = cache.get(agentId);
   if (cached) return cached;
 
   let policy: Policy = DEFAULT_POLICY;
 
-  const file = Bun.file(`./policies/${agentId}.yaml`);
-  if (await file.exists()) {
+  // An id that cannot name a file gets the default policy, never a file read. It is
+  // still a usable id everywhere else — memory and review rows are parameterised, so
+  // the scan proceeds rather than failing — it simply cannot choose its own rules.
+  const named = SAFE_AGENT_ID.test(agentId);
+  if (!named && agentId !== DEFAULT_POLICY.agentId) {
+    console.warn(
+      `Agent id ${JSON.stringify(agentId.slice(0, 64))} cannot name a policy file; using defaults.`
+    );
+  }
+
+  const file = named ? Bun.file(`./policies/${agentId}.yaml`) : null;
+  if (file && await file.exists()) {
     try {
       const parsed = (parse(await file.text()) ?? {}) as Partial<Policy>;
       policy = {
@@ -75,6 +104,12 @@ export async function loadPolicy(agentId: string): Promise<Policy> {
     },
   };
 
+  // Oldest-out when full. A caller that invents a fresh id per request would
+  // otherwise hold one policy object per id for the life of the process.
+  if (cache.size >= MAX_CACHED_POLICIES) {
+    const oldest = cache.keys().next();
+    if (!oldest.done) cache.delete(oldest.value);
+  }
   cache.set(agentId, policy);
   return policy;
 }

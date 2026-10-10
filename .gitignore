@@ -8,3 +8,4 @@ warden-dash.db
 venv/
 .agents/
 *.log
+eval/cases/corpus.jsonl
