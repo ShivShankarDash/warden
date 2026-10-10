@@ -1,0 +1,16 @@
+# 10K benchmark policy — all stages enabled including the LLM judge.
+# Identical to default.yaml except for the agentId. Judge threshold 0.5 means
+# the judge is consulted when fast-stage scores land above that floor.
+agentId: benchmark-10k
+failMode: closed
+
+thresholds:
+  rules: 0
+  classifier: 0.6
+  similarity: 0.70
+  judge: 0.5           # enabled — judge runs on the request path
+  session: 0.8
+  highConfidence: 0.9
+  benignCertainty: 0.99
+
+allowedTools: []
