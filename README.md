@@ -103,15 +103,28 @@ Wait until you see the Warden banner. That means it is listening.
 > Short on time or disk? Add `WARDEN_NO_LAYA_INSTALL=1` in front of the command to
 > skip the 1.2 GB download. Warden still works, just catches fewer attacks.
 
-#### Step 3 — Teach it the latest attacks
+#### Step 3 — Teach it the latest attacks and probe for gaps
 
 Open a **second** terminal, leaving the first one running:
 
 ```bash
+# Threat Intel agent — pulls real prompt-injection examples from public
+# security datasets, tests each one against your install, and memorises
+# anything it misses. Run this first.
 bunx @shivdev/agent-warden intel
+
+# Red Team agent — generates adversarial attack variants and probes your
+# install for gaps. Requires an LLM API key (ANTHROPIC_API_KEY,
+# OPENAI_API_KEY, or OPENROUTER_API_KEY).
+bunx @shivdev/agent-warden redteam
 ```
 
-Pulls real prompt-injection examples from public security datasets, tests each one against your install, and memorises anything it misses.
+| Agent | What it does |
+|---|---|
+| `intel` | Fetches known attacks from public threat feeds, scans them locally, and seeds any misses into Warden's memory so it catches them next time |
+| `redteam` | Generates novel attack variants using an LLM, then probes your install to find blind spots. Needs an API key |
+
+Re-run either agent any time you want to strengthen your install.
 
 #### Step 4 — Point your editor at Warden
 
@@ -364,8 +377,11 @@ If Warden flags something legitimate, clear it on the dashboard — that teaches
 # Start Warden + dashboard
 bunx @shivdev/agent-warden --api-only --port 3000
 
-# Pull the latest attacks from public threat feeds
+# Threat Intel — pull the latest attacks from public threat feeds and learn what you miss
 bunx @shivdev/agent-warden intel
+
+# Red Team — generate adversarial attacks and probe for gaps (needs an LLM key)
+bunx @shivdev/agent-warden redteam
 
 # See every option
 bunx @shivdev/agent-warden --help
