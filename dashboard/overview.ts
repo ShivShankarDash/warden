@@ -167,7 +167,6 @@ function renderDecisions(a: Analytics) {
       [...settled].sort((x, y) => rank(x.stage) - rank(y.stage) || y.n - x.n).map((d) => ({
         label: stageLabel(d.stage),
         value: d.n,
-        emphasis: d.stage === "similarity",
         note: d.stage === "similarity"
           ? "fast path — matched against memory, no judge call"
           : d.stage === "rules"
@@ -283,10 +282,13 @@ function wireFeedClicks() {
       panel.classList.add("open");
       // Position the panel after the clicked row.
       row.insertAdjacentElement("afterend", panel);
-      json<{ scanId: string; explanation: string }>(`/explain/${encodeURIComponent(scanId)}`)
+      json<{ scanId: string; explanation: string; content?: string }>(`/explain/${encodeURIComponent(scanId)}`)
         .then((data) => {
           if (expandedScanId !== scanId) return; // user clicked elsewhere
-          panel.innerHTML = formatExplanation(data.explanation);
+          const contentHtml = data.content
+            ? `<div style="font-family:var(--mono);font-size:12px;color:var(--ink-2);margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--line-soft);white-space:pre-wrap;word-break:break-word">${esc(data.content.slice(0, 500))}</div>`
+            : "";
+          panel.innerHTML = contentHtml + formatExplanation(data.explanation);
         })
         .catch(() => {
           if (expandedScanId !== scanId) return;

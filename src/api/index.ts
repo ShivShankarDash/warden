@@ -399,7 +399,7 @@ export async function startApiServer(port: number) {
             reputation,
           });
 
-          return Response.json({ scanId, explanation });
+          return Response.json({ scanId, explanation, content });
         },
       },
 

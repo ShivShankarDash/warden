@@ -218,10 +218,13 @@ export function isRange(v: string | null): v is RangeKey {
 export function recentScans(limit = 40) {
   const rows = getDb()
     .query(
-      `SELECT id, source, action, risk_score, findings, trace, created_at
-         FROM scan_results ORDER BY created_at DESC LIMIT ?`
+      `SELECT sr.id, sr.source, sr.action, sr.risk_score, sr.findings, sr.trace, sr.created_at,
+              rq.content AS content
+         FROM scan_results sr
+         LEFT JOIN review_queue rq ON rq.scan_id = sr.id
+         ORDER BY sr.created_at DESC LIMIT ?`
     )
-    .all(Math.min(limit, 200)) as (Row & { id: string })[];
+    .all(Math.min(limit, 200)) as (Row & { id: string; content: string | null })[];
 
   return rows.map((r) => {
     const findings = parse<Finding[]>(r.findings, []);
@@ -236,6 +239,7 @@ export function recentScans(limit = 40) {
       decidedBy: d.stage,
       savedMs: d.savedMs,
       latencyMs: trace.find((t) => t.stage === "total")?.ms ?? 0,
+      preview: r.content ? r.content.slice(0, 160) : undefined,
       at: r.created_at,
     };
   });
