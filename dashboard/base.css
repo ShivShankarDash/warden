@@ -588,6 +588,12 @@ table.dataview .scroller { max-height: 300px; overflow: auto; }
 .collapsible .body { padding: 14px 16px 16px; }
 
 .rev {
+  /* .queue is a column flex container with a max-height. Flex items shrink to fit
+     by default, so once the queue is taller than that, every card is squeezed
+     instead of the container scrolling — 50 cards collapsed to about 8px each, and
+     the overflow:hidden below clipped them into bare lines. Short queues fit and
+     never shrank, which is why this only appeared on a large backlog. */
+  flex: 0 0 auto;
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: var(--radius);
