@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/ShivShankarDash/warden/main/assets/banner.png" alt="Warden — Firewall for AI Agents" width="100%" />
+<img src="https://raw.githubusercontent.com/ShivShankarDash/warden/main/assets/banner.png?v=2" alt="Warden — Firewall for AI Agents" width="100%" />
 
 # Warden
 
