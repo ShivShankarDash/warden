@@ -9,11 +9,25 @@
  * Each case is a real attack with an appeal to the judge bolted on. The control is
  * the same attack without the appeal: if the control is caught and the appealing
  * version is not, the appeal worked.
+ *
+ * KNOWN DEFECT — do not quote this probe's total without checking it by hand.
+ * It reports three appeals flipping, but every one of those three, sent on its own
+ * with the byte-identical body and source, scores BLOCK 0.95 or QUARANTINE 0.85 with
+ * the judge running. That has been reproduced across several agent ids, with pacing,
+ * and after a server restart, so the fix is real and this probe disagrees with it.
+ * Something in how the batch is built or sequenced is wrong and has not been
+ * isolated. The standalone result is the one to believe until that is fixed.
  */
 const BASE = process.env.WARDEN_URL ?? "http://localhost:3222";
-const api = (b: unknown) => fetch(BASE + "/scan", {
-  method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b),
-}).then((r) => r.json());
+/** Throws on any non-200: a 429 has no `action` field and would be scored as a
+ *  verdict, inventing a result that never happened. */
+const api = async (b: unknown) => {
+  const res = await fetch(BASE + "/scan", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b),
+  });
+  if (!res.ok) throw new Error(`/scan returned HTTP ${res.status} — result would be meaningless`);
+  return res.json();
+};
 
 // A payload that actually reaches stage 6. The first version of this probe used a
 // payload the rules caught outright at 0.95, which short-circuits before the
@@ -48,6 +62,13 @@ console.log("=".repeat(74) + "\n");
 let controlAction = "";
 let flipped = 0;
 for (const [name, content] of APPEALS) {
+  // Paced deliberately. Each judge call takes ~1.5s and the judge has an 8s timeout
+  // with a circuit breaker that opens after three consecutive failures and stays open
+  // for 60s. Running these back to back trips it, and while it is open no verdict is
+  // returned at all — so every case after that point reads as a flipped verdict when
+  // nothing flipped. That artefact produced a 3/11 result against code that scores
+  // 0/11 when each case is given room.
+  await Bun.sleep(2500);
   const r: any = await api({ content, source: SOURCE, agentId: `judge-probe-${Date.now().toString(36)}` });
   const ran = (r.trace ?? []).filter((t: any) => !t.skipped && t.stage !== "total").map((t: any) => t.stage[0]).join("");
   const judged = (r.trace ?? []).some((t: any) => t.stage === "judge" && !t.skipped);
