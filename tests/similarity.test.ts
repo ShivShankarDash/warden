@@ -62,3 +62,34 @@ describe("embedding serialisation", () => {
     expect(cosine(v, back)).toBeCloseTo(1, 6);
   });
 });
+
+describe("memory cache is per-agent", () => {
+  /**
+   * Regression. The cache was a single shared array that ignored agentId, and since
+   * `cache = []` is truthy, an agent with nothing learned cached emptiness for the
+   * whole process. One scan for an agent with no memories — the default agent on a
+   * fresh install — left every later lookup, for every agent, matching an empty pool.
+   * Attack recall and safe-memory relief both returned 0 silently: no error, and no
+   * trace entry to show stage 5 had been neutered.
+   */
+  test("an agent with no memories does not blank out other agents", async () => {
+    const { invalidateReferenceCache, referenceCount } = await import("../src/detect/similarity.ts");
+    const { addMemory, confirmMemory } = await import("../src/store/memory.ts");
+
+    invalidateReferenceCache();
+
+    const vector = new Float32Array(384).fill(0.1);
+    const m = addMemory({
+      label: "attack", vector, text: "cache scoping probe — a stored attack example",
+      source: "email", sourceId: null, origin: "human", agentId: "agent-with-memory",
+    });
+    confirmMemory(m.id);           // probation -> active
+    invalidateReferenceCache();
+
+    // The empty agent asks first; this is what used to poison the cache.
+    expect(referenceCount("agent-with-nothing")).toBe(0);
+
+    // The populated agent must still see its own memory.
+    expect(referenceCount("agent-with-memory")).toBeGreaterThan(0);
+  });
+});

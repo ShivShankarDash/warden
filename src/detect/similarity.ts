@@ -35,15 +35,29 @@ const DUPLICATE_THRESHOLD = 0.95;
 /** Short inputs embed noisily — cosine between two 3-word strings is unstable. */
 const MIN_LENGTH = 20;
 
-let cache: MemoryRecord[] | null = null;
+/**
+ * Per-agent memory cache.
+ *
+ * This was a single shared array with two faults that cancelled the whole stage out.
+ * It ignored agentId, so whichever agent looked first filled it for every other one;
+ * and because `cache = []` is truthy, an agent with no memories cached emptiness
+ * permanently. One scan for an agent with nothing learned — the default agent on a
+ * fresh install — left every later lookup, for every agent, matching against an empty
+ * pool. Attack recall and safe-memory relief both silently returned 0, with no error
+ * and no trace entry to show the stage had been neutered.
+ *
+ * Keyed by agent and probed with has(), so an empty pool is a cached fact about that
+ * one agent rather than about the process.
+ */
+const cache = new Map<string, MemoryRecord[]>();
 
 function memories(agentId: string): MemoryRecord[] {
-  if (!cache) cache = activeMemories({ agentId });
-  return cache;
+  if (!cache.has(agentId)) cache.set(agentId, activeMemories({ agentId }));
+  return cache.get(agentId)!;
 }
 
 export function invalidateReferenceCache(): void {
-  cache = null;
+  cache.clear();
 }
 
 export function referenceCount(agentId = "default"): number {
