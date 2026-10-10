@@ -43,6 +43,8 @@ const stats = {
   allowed: 0,
   blocked: 0,
   spotlighted: 0,
+  /** Passed through with no detection run (fail-open). Never counted as a scan. */
+  unscanned: 0,
   /** Running sum of scan latencies in ms (avoids unbounded array growth). */
   latencySumMs: 0,
   /** Number of latency samples recorded. */
@@ -57,6 +59,7 @@ export function getGatewayStats() {
     allowed: stats.allowed,
     blocked: stats.blocked,
     spotlighted: stats.spotlighted,
+    unscanned: stats.unscanned,
     attackTypes: [...stats.attackTypes],
     avgLatencyMs: stats.latencyCount
       ? Math.round(stats.latencySumMs / stats.latencyCount)
@@ -181,9 +184,41 @@ function logStartup(
 
 /* ─── Helpers ─────────────────────────────────────────────────────────── */
 
+/**
+ * Every piece of a tool result the model will end up reading.
+ *
+ * `type: "text"` is not the only such piece. An embedded `resource` block carries a
+ * `text` field that hosts render straight into the context, and a tool with an
+ * outputSchema returns `structuredContent` alongside it. Reading only text blocks
+ * meant a malicious upstream could wrap its injection in a resource block and walk
+ * past scan point 2 entirely — the gateway logged "(empty result, skipped)" and
+ * handed the payload to the model untouched.
+ */
 function textOf(result: unknown): string {
-  const content = (result as { content?: { type?: string; text?: string }[] })?.content ?? [];
-  return content.filter((c) => c?.type === "text").map((c) => c.text ?? "").join("\n");
+  const r = result as {
+    content?: unknown[];
+    structuredContent?: unknown;
+  };
+  const parts: string[] = [];
+
+  for (const block of r?.content ?? []) {
+    const c = block as { type?: string; text?: string; resource?: { text?: string; blob?: string } };
+    if (typeof c?.text === "string" && c.text) parts.push(c.text);
+    // Embedded resource: the text lives one level down. `blob` is base64 binary and
+    // is left alone — the extractors upstream of /scan handle encodings, not this.
+    if (typeof c?.resource?.text === "string" && c.resource.text) parts.push(c.resource.text);
+  }
+
+  if (r?.structuredContent !== undefined && r.structuredContent !== null) {
+    try {
+      parts.push(JSON.stringify(r.structuredContent));
+    } catch {
+      // Circular or otherwise unserialisable: nothing readable to scan, and
+      // throwing here would fail the whole call over a logging-shaped detail.
+    }
+  }
+
+  return parts.join("\n");
 }
 
 interface Upstream {
@@ -192,8 +227,18 @@ interface Upstream {
   tools: Tool[];
 }
 
-/** Tool name -> which upstream serves it. */
-const routes = new Map<string, Upstream>();
+/**
+ * Exposed tool name -> the upstream serving it and the name that upstream knows it by.
+ *
+ * The real name is kept rather than recomputed from a `${upstream}__` prefix: the
+ * prefix is only added on a collision, so stripping it by pattern also mangles a
+ * genuine tool called `alpha__thing` served by an upstream called `alpha`.
+ */
+interface Route {
+  upstream: Upstream;
+  realName: string;
+}
+const routes = new Map<string, Route>();
 
 function newClient(): Client {
   return new Client({ name: "warden-gateway", version: "0.1.0" }, { capabilities: {} });
@@ -233,10 +278,23 @@ async function connectHttp(name: string, spec: HttpUpstream): Promise<Client> {
   throw lastError;
 }
 
-async function connectUpstream(name: string, spec: UpstreamSpec): Promise<Upstream | null> {
-  try {
-    let client: Client;
+/**
+ * How long one upstream gets to finish connecting and list its tools.
+ *
+ * Nothing is exposed until every upstream has settled, so an upstream that accepts
+ * the connection and then never answers held the whole gateway: the host's first
+ * tools/list blocked behind it and timed out with zero tools, even though the other
+ * servers were up in milliseconds. One wedged server must not take the healthy ones
+ * down with it, so a slow upstream is dropped the same way a dead one is.
+ */
+const UPSTREAM_CONNECT_TIMEOUT_MS = Number(process.env.WARDEN_UPSTREAM_TIMEOUT_MS ?? 20_000);
 
+async function connectUpstream(name: string, spec: UpstreamSpec): Promise<Upstream | null> {
+  // Held outside the race so a client that connects after the deadline still gets
+  // closed — otherwise a wedged upstream leaves an orphaned child process behind.
+  let client: Client | undefined;
+
+  const attempt = async (): Promise<Upstream> => {
     if (isHttpUpstream(spec)) {
       client = await connectHttp(name, spec);
     } else {
@@ -254,9 +312,30 @@ async function connectUpstream(name: string, spec: UpstreamSpec): Promise<Upstre
     const listed = await client.listTools();
     console.error(`[warden-gateway] connected ${name} (${listed.tools.length} tools)`);
     return { name, client, tools: listed.tools };
+  };
+
+  // The race drops whichever promise loses. Without this catch, an upstream that
+  // times out and *then* fails raises an unhandled rejection in the gateway process.
+  const attempted = attempt();
+  attempted.catch(() => {});
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      attempted,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`no response within ${UPSTREAM_CONNECT_TIMEOUT_MS}ms`)),
+          UPSTREAM_CONNECT_TIMEOUT_MS
+        );
+      }),
+    ]);
   } catch (e) {
     console.error(`[warden-gateway] FAILED to connect ${name}: ${e instanceof Error ? e.message : e}`);
+    await client?.close().catch(() => {});
     return null;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -276,7 +355,7 @@ function registerTools(upstreams: Upstream[]): Tool[] {
   for (const u of upstreams) {
     for (const t of u.tools) {
       const name = (seen.get(t.name) ?? 0) > 1 ? `${u.name}__${t.name}` : t.name;
-      routes.set(name, u);
+      routes.set(name, { upstream: u, realName: t.name });
       exposed.push({ ...t, name });
     }
   }
@@ -333,13 +412,31 @@ export async function vetToolDescriptions(tools: Tool[], upstreamName: string): 
     const verdict = await scanContent(text, "mcp_tool_description", SESSION_ID);
     const elapsedMs = Math.round(performance.now() - t0);
 
+    if (verdict.unscanned) {
+      // Fail-open with the scanner down. Same rule as a whitelisted upstream: report
+      // it as unscanned and leave it out of the totals, rather than printing CLEAN
+      // for a description nothing looked at.
+      stats.unscanned++;
+      console.error(
+        `${emoji.shield} [warden] Tool "${tool.name}" — ${yellow("NOT SCANNED")} ` +
+        `${dim("(scanner unreachable, WARDEN_FAIL_MODE=open)")}`
+      );
+      safe.push(tool);
+      continue;
+    }
+
     stats.totalScans++;
 
     logToolVet(tool.name, verdict.action, verdict.riskScore, verdict.findings, elapsedMs);
 
     if (verdict.action === "BLOCK" || verdict.action === "QUARANTINE") {
+      // Counted like any other block. Leaving these out meant a run that withheld
+      // every tool on the server still printed "Blocked: 0" in the summary.
+      stats.blocked++;
+      for (const f of verdict.findings) stats.attackTypes.add(f.attackType);
       continue;
     }
+    stats.allowed++;
     safe.push(tool);
   }
   return safe;
@@ -369,20 +466,59 @@ export async function startGateway(config: GatewayConfig) {
   server.setRequestHandler(CallToolRequestSchema, async (req) => {
     if (!ready) await readyPromise;
     const toolName = req.params.name;
-    const upstream = routes.get(toolName);
-    if (!upstream) {
+    const route = routes.get(toolName);
+    if (!route) {
       return {
         isError: true,
         content: [{ type: "text" as const, text: `Unknown tool: ${toolName}` }],
       };
     }
+    const { upstream, realName } = route;
 
-    // Strip the collision prefix before forwarding — the upstream knows its own name.
-    const realName = toolName.startsWith(`${upstream.name}__`)
-      ? toolName.slice(upstream.name.length + 2)
-      : toolName;
+    // Scan point 3: the outbound call, before it executes.
+    //
+    // The two inbound scan points stop poisoned content reaching the model. This is
+    // the other direction — the point where a compromised agent would actually send
+    // the data. Checked before forwarding, so it prevents rather than reports.
+    //
+    // Runs on the ORIGINAL arguments, ahead of PII redaction. Redacting first turned
+    // `sk-...` into `[REDACTED_API_KEY]` before the secret scanner ever saw it, so a
+    // credential in a tool call was quietly rewritten and the call went through
+    // instead of being refused — the check reported "no policy violation" on an
+    // argument it had already been robbed of.
+    //
+    // The upstream's own name for the tool is what gets checked, not the exposed one.
+    // The `alpha__` collision prefix is Warden's invention; the guard's egress list
+    // matches real tool names, so `alpha__send_email` looked like a tool that sends
+    // nothing and skipped the taint check that `send_email` fails.
+    const outbound = await checkOutboundToolCall(realName, req.params.arguments ?? {}, SESSION_ID);
+    if (outbound.unchecked) {
+      console.error(
+        `${emoji.shield} [warden] ${yellow("NOT CHECKED")} ${bold(toolName)} ${dim("— " + outbound.reason)}`
+      );
+    }
+    if (!outbound.allowed) {
+      stats.blocked++;
+      stats.totalScans++;
+      console.error(
+        `${emoji.shield} ${red("BLOCKED OUTBOUND")} ${bold(toolName)} ${dim("— " + outbound.reason)}`
+      );
+      return {
+        isError: true,
+        content: [
+          {
+            type: "text" as const,
+            text:
+              `[warden] This tool call was blocked before it ran.\n${outbound.reason}\n` +
+              `Tell the user the action was prevented; do not retry it another way.`,
+          },
+        ],
+      };
+    }
 
-    // PII scan outbound tool arguments before forwarding to upstream.
+    // PII redaction of the arguments. Deliberately after the outbound check: this is
+    // a last-mile mitigation for what the guard decided to let through, not an input
+    // to that decision.
     let forwardArgs = req.params.arguments ?? {};
     if (process.env.WARDEN_PII_ENABLED !== "0") {
       const mutatedArgs: Record<string, unknown> = { ...forwardArgs };
@@ -404,31 +540,6 @@ export async function startGateway(config: GatewayConfig) {
         forwardArgs = mutatedArgs;
         console.error(`     ${emoji.warn} PII redacted in args: ${argPiiTypes.join(", ")}`);
       }
-    }
-
-    // Scan point 3: the outbound call, before it executes.
-    //
-    // The two inbound scan points stop poisoned content reaching the model. This is
-    // the other direction — the point where a compromised agent would actually send
-    // the data. Checked before forwarding, so it prevents rather than reports.
-    const outbound = await checkOutboundToolCall(toolName, forwardArgs, SESSION_ID);
-    if (!outbound.allowed) {
-      stats.blocked++;
-      stats.totalScans++;
-      console.error(
-        `${emoji.shield} ${red("BLOCKED OUTBOUND")} ${bold(toolName)} ${dim("— " + outbound.reason)}`
-      );
-      return {
-        isError: true,
-        content: [
-          {
-            type: "text" as const,
-            text:
-              `[warden] This tool call was blocked before it ran.\n${outbound.reason}\n` +
-              `Tell the user the action was prevented; do not retry it another way.`,
-          },
-        ],
-      };
     }
 
     const result = await upstream.client.callTool({
@@ -469,6 +580,20 @@ export async function startGateway(config: GatewayConfig) {
     const verdict = await scanContent(text, source, SESSION_ID);
     const elapsedMs = Math.round(performance.now() - t0);
 
+    if (verdict.unscanned) {
+      // Fail-open passed this through without any detection running. Printing the
+      // usual "✅ ALLOW (risk 0.00)" for it would be the same mistake the tool-vet
+      // whitelist already had to be corrected for: a clean verdict is a claim about
+      // a check, and no check happened here. For the same reason it is not counted
+      // as a scan — the summary should only ever total content actually analysed.
+      stats.unscanned++;
+      console.error(
+        `${emoji.shield} [warden] ${toolName}(${argsSummary}) → ` +
+        `${yellow(`${emoji.warn} NOT SCANNED`)} ${dim("(scanner unreachable, WARDEN_FAIL_MODE=open — content passed through)")}`
+      );
+      return result as { content: unknown[]; isError?: boolean };
+    }
+
     // Update stats.
     stats.totalScans++;
     stats.latencySumMs += elapsedMs;
@@ -507,12 +632,24 @@ export async function startGateway(config: GatewayConfig) {
         for (const m of piiResult.matches) {
           console.error(`        ${dim(m.original)} → ${yellow(m.replacement)}`);
         }
-        // Replace text content entries with the mutated content.
-        const mutatedContent = (result as { content?: { type?: string; text?: string }[] })?.content?.map(
-          (c: { type?: string; text?: string }) =>
-            c?.type === "text" ? { ...c, text: (c.text ?? "").length ? piiResult.mutatedContent : c.text } : c
-        ) ?? [];
-        return { content: mutatedContent, isError: false };
+        // Redact each block against itself. Writing the mutation of the JOINED text
+        // into every text block duplicated the whole result once per block, so a
+        // two-block result came back with both blocks repeated twice.
+        const original = result as { content?: unknown[]; isError?: boolean };
+        const mutatedContent = (original?.content ?? []).map((block) => {
+          const c = block as { type?: string; text?: string; resource?: { text?: string } };
+          if (typeof c?.text === "string" && c.text.length) {
+            return { ...c, text: scanPii(c.text).mutatedContent };
+          }
+          if (typeof c?.resource?.text === "string" && c.resource.text.length) {
+            return { ...c, resource: { ...c.resource, text: scanPii(c.resource.text).mutatedContent } };
+          }
+          return block;
+        });
+        // Spread the original so the upstream's own error flag survives: forcing
+        // isError to false turned a failed tool call that happened to mention an
+        // email address into a successful one.
+        return { ...original, content: mutatedContent };
       }
     }
 
