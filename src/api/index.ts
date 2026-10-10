@@ -7,7 +7,7 @@ import { scanOutput, generateCanary } from "../guard/output.ts";
 import { checkToolCall } from "../guard/tools.ts";
 import { recordTaint } from "../guard/taint.ts";
 import { scanPii } from "../guard/pii.ts";
-import { enqueueReview, pendingReviews, getReview, markResolved } from "../store/review.ts";
+import { enqueueReview, pendingReviews, pendingReviewCount, getReview, markResolved } from "../store/review.ts";
 import { addReference, addSafeReference } from "../detect/similarity.ts";
 import { memoryStats, recentMemories, recentPromotions } from "../store/memory.ts";
 import type { ToolCallCheck, Action, ScanResult, SourceType } from "../types.ts";
@@ -384,8 +384,14 @@ export async function startApiServer(port: number) {
 
       "/review": {
         GET: async (req) => {
-          const agentId = new URL(req.url).searchParams.get("agentId") ?? undefined;
-          const items = pendingReviews(agentId);
+          const params = new URL(req.url).searchParams;
+          const agentId = params.get("agentId") ?? undefined;
+          // Paged so a large backlog stays reachable. The response is still a bare
+          // array, so existing callers are unaffected; the true backlog size travels
+          // in X-Total-Count and in /metrics.pending_review.
+          const limit = Math.min(Math.max(Number(params.get("limit") ?? 50), 1), 500);
+          const offset = Math.max(Number(params.get("offset") ?? 0), 0);
+          const items = pendingReviews(agentId, limit, offset);
 
           const enriched = await Promise.all(
             items.map(async (item) => {
@@ -406,7 +412,9 @@ export async function startApiServer(port: number) {
             }),
           );
 
-          return Response.json(enriched);
+          return Response.json(enriched, {
+            headers: { "X-Total-Count": String(pendingReviewCount(agentId)) },
+          });
         },
       },
 

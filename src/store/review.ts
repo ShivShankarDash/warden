@@ -88,12 +88,27 @@ function toItem(r: Row): ReviewItem {
   };
 }
 
-export function pendingReviews(agentId?: string, limit = 50): ReviewItem[] {
+export function pendingReviews(agentId?: string, limit = 50, offset = 0): ReviewItem[] {
   const db = getDb();
   const rows = agentId
-    ? db.query("SELECT * FROM review_queue WHERE status='pending' AND agent_id=? ORDER BY created_at DESC LIMIT ?").all(agentId, limit)
-    : db.query("SELECT * FROM review_queue WHERE status='pending' ORDER BY created_at DESC LIMIT ?").all(limit);
+    ? db.query("SELECT * FROM review_queue WHERE status='pending' AND agent_id=? ORDER BY created_at DESC LIMIT ? OFFSET ?").all(agentId, limit, offset)
+    : db.query("SELECT * FROM review_queue WHERE status='pending' ORDER BY created_at DESC LIMIT ? OFFSET ?").all(limit, offset);
   return (rows as Row[]).map(toItem);
+}
+
+/**
+ * How many items are actually waiting.
+ *
+ * The queue is served one page at a time, so the length of a page is not the size
+ * of the backlog. Reporting the page length as the count made a 880-item queue read
+ * as 50 — the reviewer had no way to tell that most of it was out of reach.
+ */
+export function pendingReviewCount(agentId?: string): number {
+  const db = getDb();
+  const row = agentId
+    ? db.query("SELECT COUNT(*) AS n FROM review_queue WHERE status='pending' AND agent_id=?").get(agentId)
+    : db.query("SELECT COUNT(*) AS n FROM review_queue WHERE status='pending'").get();
+  return (row as { n: number }).n;
 }
 
 export function getReview(id: string): ReviewItem | null {

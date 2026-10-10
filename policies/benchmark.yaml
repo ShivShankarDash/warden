@@ -1,0 +1,16 @@
+# Benchmark policy. Identical to default except the judge is never consulted:
+# 50k cases at ~17% referral would be ~8,600 paid LLM calls and several hours.
+# Stages 1-5 and 7 are measured; see the report for what the judge adds on a sample.
+agentId: benchmark
+failMode: closed
+
+thresholds:
+  rules: 0
+  classifier: 0.6
+  similarity: 0.70
+  judge: 1.1            # unreachable — no scan is ever referred
+  session: 0.8
+  highConfidence: 0.9
+  benignCertainty: 0.0  # never refer on benign-uncertainty either
+
+allowedTools: []

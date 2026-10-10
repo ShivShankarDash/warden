@@ -314,9 +314,9 @@ const readOpenPref = (): string | null => {
   }
 };
 
-function renderReview(items: ReviewItem[]) {
-  $("review-summary").textContent = reviewSummary(items);
-  renderReviewPanel($("review-body"), items, refresh);
+function renderReview(items: ReviewItem[], pendingTotal = items.length) {
+  $("review-summary").textContent = reviewSummary(items, pendingTotal);
+  renderReviewPanel($("review-body"), items, refresh, pendingTotal);
 
   // Until the reader expresses a preference, the panel opens only when there is
   // something to decide — so a clear queue costs one line, not a screen.
@@ -370,8 +370,11 @@ async function refresh() {
   $("heat-table").innerHTML = heatTable(a.heatmap);
   renderDecisions(a);
   renderMemory(metrics, mem);
-  renderReview(queue);
-  setQueueBadge(queue.length);
+  renderReview(queue, metrics.pending_review);
+  // The true backlog, not the length of the page just fetched. These diverge the
+  // moment the queue exceeds one page, and showing the page length made a
+  // several-hundred-item queue read as a tidy 50.
+  setQueueBadge(metrics.pending_review);
 
   $("stamp").textContent = `Updated ${clock(Date.now())}`;
 

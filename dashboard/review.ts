@@ -22,11 +22,14 @@ export interface ReviewItem {
 
 /** The one-line digest shown on the collapsed header, so the queue can be judged
  *  without opening it. */
-export function reviewSummary(items: ReviewItem[]): string {
+export function reviewSummary(items: ReviewItem[], pendingTotal = items.length): string {
   if (!items.length) return "nothing awaiting a decision";
   const topRisk = Math.max(...items.map((i) => i.riskScore));
   const oldest = Math.min(...items.map((i) => i.createdAt));
-  return `highest risk ${topRisk.toFixed(2)} · oldest ${ago(oldest)}`;
+  // Say so when the panel is showing a page rather than the whole queue, so a
+  // backlog cannot look like it has been fully triaged.
+  const more = pendingTotal > items.length ? ` · showing ${items.length} of ${pendingTotal}` : "";
+  return `highest risk ${topRisk.toFixed(2)} · oldest ${ago(oldest)}${more}`;
 }
 
 function card(it: ReviewItem): string {
@@ -66,7 +69,8 @@ function card(it: ReviewItem): string {
 export function renderReviewPanel(
   host: HTMLElement,
   items: ReviewItem[],
-  onResolved: () => void | Promise<void>
+  onResolved: () => void | Promise<void>,
+  pendingTotal = items.length
 ) {
   if (!items.length) {
     host.innerHTML = `<div class="empty">
@@ -78,10 +82,47 @@ export function renderReviewPanel(
 
   // Most urgent first; a tie falls back to the longest wait.
   const ordered = [...items].sort((a, b) => b.riskScore - a.riskScore || a.createdAt - b.createdAt);
-  host.innerHTML = `<div class="queue">${ordered.map(card).join("")}</div>`;
+
+  // The server pages the queue. Without a way to ask for the next page, everything
+  // past the first was unreachable — a reviewer could only ever see the newest 50,
+  // however long the backlog was.
+  const more = pendingTotal > items.length
+    ? `<div class="acts" style="justify-content:center">
+         <button class="act" id="review-more">Load ${Math.min(50, pendingTotal - items.length)} more
+           (${pendingTotal - items.length} still queued)</button>
+       </div>`
+    : "";
+  host.innerHTML = `<div class="queue">${ordered.map(card).join("")}</div>${more}`;
 
   for (const btn of host.querySelectorAll<HTMLButtonElement>("button[data-decision]")) {
     btn.addEventListener("click", () => void decide(btn, onResolved));
+  }
+
+  const moreBtn = host.querySelector<HTMLButtonElement>("#review-more");
+  moreBtn?.addEventListener("click", () => void loadMore(moreBtn, host, items, onResolved, pendingTotal));
+}
+
+/** Fetches the next page and appends it, keeping the decisions already on screen. */
+async function loadMore(
+  btn: HTMLButtonElement,
+  host: HTMLElement,
+  shown: ReviewItem[],
+  onResolved: () => void | Promise<void>,
+  pendingTotal: number
+) {
+  btn.disabled = true;
+  btn.textContent = "Loading…";
+  try {
+    const res = await fetch(`/review?offset=${shown.length}&limit=50`);
+    const next = (await res.json()) as ReviewItem[];
+    if (!next.length) {
+      btn.textContent = "No more items";
+      return;
+    }
+    renderReviewPanel(host, [...shown, ...next], onResolved, pendingTotal);
+  } catch {
+    toast("Could not load more");
+    btn.disabled = false;
   }
 }
 
