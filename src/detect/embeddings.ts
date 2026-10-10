@@ -48,7 +48,14 @@ export async function embed(text: string): Promise<Float32Array | null> {
   if (!_pipeline) return null;
   try {
     const out = await _pipeline(text.slice(0, 2000), { pooling: "mean", normalize: true });
-    return out.data instanceof Float32Array ? out.data : new Float32Array(out.data);
+    // Always copy. out.data is the pipeline's own output buffer, and transformers.js
+    // reuses it for the next inference — so returning it hands the caller memory that
+    // another embed() can overwrite underneath them. Warden learns in the background
+    // while a scan is still running, so a concurrent embed could rewrite the query
+    // vector midway through similarityCheck's loop, leaving it comparing a stored
+    // memory against that memory's own embedding: cosine 1.000 between unrelated
+    // texts, and a confident BLOCK on content that matched nothing.
+    return new Float32Array(out.data);
   } catch (e) {
     console.warn(`Embedding failed: ${e instanceof Error ? e.message : e}`);
     return null;

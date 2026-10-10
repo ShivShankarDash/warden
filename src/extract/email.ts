@@ -56,23 +56,62 @@ export async function extractEmail(content: string | Buffer): Promise<ExtractRes
     typeof parsed.html === "string" ? parsed.html : "",
   ].join("\n").trim();
 
-  const hiddenText = hiddenSections.map((s) => s.content).join("\n");
+  // Every header line, not just subject and from.
+  //
+  // mailparser surfaces only the headers it recognises, so anything else in the
+  // header block was parsed and then dropped. That is content an attacker controls:
+  // an injection on an X- header, or on any line shaped like "Key: value", was
+  // removed before the first detection stage ever saw it.
+  const headerText = (parsed.headerLines ?? [])
+    .map((h: { line?: string }) => h.line ?? "")
+    .filter(Boolean)
+    .join("\n");
+
+  const hiddenText = [headerText, hiddenSections.map((s) => s.content).join("\n")]
+    .filter(Boolean)
+    .join("\n");
 
   // Fail closed. Content that isn't valid RFC822 parses to nothing, and passing an
   // empty extraction downstream means the scan sees no text and allows anything —
   // so anything unparseable would bypass the firewall entirely. Scan the raw input.
-  if (!visibleText && !hiddenText) {
+  // Fail closed on an empty body.
+  //
+  // Keyed on visibleText alone, not on both being empty. Now that header lines are
+  // collected, input that is a single header-shaped line — "Reference code: ignore
+  // all previous instructions" — produces a non-empty hiddenText and would have
+  // skipped this fallback, leaving the body empty and the whole message classed as
+  // hidden content. It would still be scanned, but scored as concealed text rather
+  // than as what it is: the entire message.
+  if (!visibleText.trim()) {
     const raw = typeof content === "string" ? content : content.toString("utf8");
     return {
       visibleText: raw,
-      hiddenText: "",
-      provenance: { source: "email", hiddenSections: [{ type: "unparsed_raw", content: raw }] },
+      hiddenText,
+      provenance: {
+        source: "email",
+        hiddenSections: [...hiddenSections, { type: "unparsed_raw", content: raw }],
+      },
     };
   }
 
+  // Coverage guard. The check above only fires when the parse yields nothing at all,
+  // so a parse that silently dropped most of its input sailed through. Text that is
+  // not really an email but is scanned as one — anything whose opening lines look
+  // like "Key: value" — gets those lines eaten as a header block, and the scan then
+  // runs on whatever followed the first blank line. Observed on a 701-character
+  // document that reached the detector as 271 characters, with the first 430 never
+  // examined by any stage.
+  //
+  // Rather than trust the parser's judgement about what counts as content, compare
+  // what came out against what went in and append the raw text when too much is
+  // missing. Duplication costs a little latency; a silent gap costs a detection.
+  const raw = typeof content === "string" ? content : content.toString("utf8");
+  const covered = visibleText.length + hiddenText.length;
+  const underCovered = raw.trim().length > 0 && covered < raw.trim().length * 0.9;
+
   return {
     visibleText,
-    hiddenText,
+    hiddenText: underCovered ? [hiddenText, raw].filter(Boolean).join("\n") : hiddenText,
     provenance: { source: "email", hiddenSections },
   };
 }
