@@ -9,3 +9,4 @@ venv/
 .agents/
 *.log
 eval/cases/corpus.jsonl
+.kiro/hooks/
