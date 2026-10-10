@@ -53,10 +53,28 @@ const PII_PATTERNS: PiiPattern[] = [
     regex: /\bAKIA[0-9A-Z]{16}\b/g,
     replacement: "[REDACTED_AWS_KEY]",
   },
-  // AWS secret key — 40+ char base64 string near "secret" context.
+  // AWS secret key — 40 chars of base64-ish text.
+  //
+  // The shape alone is worthless as evidence: a git SHA, a content hash, a build
+  // id, a nonce and any base64 blob all look exactly like this, and redaction
+  // rewrites the text the model then reads, so matching on shape would quietly
+  // corrupt every code review that mentions a commit. A match therefore needs
+  // supporting context, and the keyword stays outside the match so only the
+  // secret itself is replaced.
+  //
+  // The old pattern demanded the full "secret…key" phrasing, so the common
+  // "Secret wJalr…" — the word on its own — was not detected at all.
   {
     type: "aws_secret",
-    regex: /(?:secret[\s_-]*(?:access)?[\s_-]*key[\s:="']*)[A-Za-z0-9/+=]{40,}/gi,
+    regex: /(?<=\b(?:aws[\s_-]*)?(?:secret|credential)(?:[\s_-]*access)?(?:[\s_-]*key)?[\s:="'`]{1,6})[A-Za-z0-9/+]{40,}={0,2}(?![A-Za-z0-9/+=])/gi,
+    replacement: "[REDACTED_AWS_SECRET]",
+  },
+  // Same secret without the keyword, identified by the access key id it sits
+  // next to — the two are always issued and pasted as a pair. Mixed case is
+  // required so a 40-character hex commit hash near an AKIA id stays untouched.
+  {
+    type: "aws_secret",
+    regex: /(?<=\bAKIA[0-9A-Z]{16}\b[\s\S]{0,120})(?<![A-Za-z0-9/+=])(?=[A-Za-z0-9/+]*[a-z])(?=[A-Za-z0-9/+]*[A-Z])[A-Za-z0-9/+]{40,}={0,2}(?![A-Za-z0-9/+=])/g,
     replacement: "[REDACTED_AWS_SECRET]",
   },
   // API keys — sk-*, ghp_*, gho_*, ghu_*, ghs_*, ghr_*, xoxb-*, xoxp-*, xoxs-*, xoxa-*, xoxr-*.
@@ -83,10 +101,31 @@ const PII_PATTERNS: PiiPattern[] = [
     regex: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g,
     replacement: "[REDACTED_EMAIL]",
   },
-  // Machine hostname — AWS-style internal hostnames.
+  // Machine hostname — an *internal* host, which is what leaks infrastructure.
+  //
+  // Only the AWS "ip-10-0-0-1.ec2.internal" form was matched before, so an
+  // ordinary internal host like prod-db-07.internal.acme.com went through
+  // untouched. The hard part is not matching every dotted token: "version 1.2.3",
+  // "file.tar.gz", "Node.js", "example.co.uk" and a public domain mentioned in
+  // passing are not hostnames worth redacting, and redacting them would mangle
+  // normal prose. So a match needs an internal marker, never shape alone.
+  //
+  // The trailing (?!\.?[A-Za-z0-9-]) stops "settings.local.json" matching as
+  // "settings.local" while still allowing a hostname at the end of a sentence.
+
+  // Internal suffix: the name ends in a private-network zone.
   {
     type: "hostname",
-    regex: /\bip-\d{1,3}-\d{1,3}-\d{1,3}-\d{1,3}\.[A-Za-z0-9.-]*\.internal\b/g,
+    regex: /\b[A-Za-z0-9][A-Za-z0-9-]{0,62}(?:\.[A-Za-z0-9-]{1,63})*\.(?:internal|local|localdomain|lan|intranet|corp)(?!\.?[A-Za-z0-9-])/g,
+    replacement: "[REDACTED_HOSTNAME]",
+  },
+  // Internal zone inside a public domain — prod-db-07.internal.acme.com. The
+  // final label must be a real TLD, which keeps dotted code identifiers like
+  // "com.acme.internal.utils" out. "prod"/"dev"/"staging" are deliberately not
+  // zone markers: "blog.dev.to" is a public site.
+  {
+    type: "hostname",
+    regex: /\b[A-Za-z0-9][A-Za-z0-9-]{0,62}(?:\.[A-Za-z0-9-]{1,63})*\.(?:internal|intranet|corp|ec2|compute|svc|cluster|vpc)(?:\.[A-Za-z0-9-]{1,63})*\.(?:com|net|org|io|co|dev|ai|app|cloud|uk|us|de|fr|eu|gov|edu|mil|biz|info)(?!\.?[A-Za-z0-9-])/g,
     replacement: "[REDACTED_HOSTNAME]",
   },
   // IPv6 — common colon-separated hex patterns (simplified, catches most forms).

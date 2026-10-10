@@ -3,7 +3,7 @@ import { layaStatus } from "../detect/laya.ts";
 import { getDb, insertScanResult, getScanResult } from "../store/db.ts";
 import { initWarden } from "../init.ts";
 import { getSession, resetSession } from "../detect/session.ts";
-import { scanOutput, generateCanary } from "../guard/output.ts";
+import { scanOutput, generateCanary, validateOutputScanRequest } from "../guard/output.ts";
 import { checkToolCall } from "../guard/tools.ts";
 import { recordTaint } from "../guard/taint.ts";
 import { scanPii } from "../guard/pii.ts";
@@ -136,10 +136,25 @@ export async function startApiServer(port: number) {
           let body: any;
           try { body = await req.json(); } catch { return jsonError("invalid JSON"); }
 
-          if (!body.content || typeof body.content !== "string") {
-            return jsonError("content is required and must be a string");
-          }
-          if (body.content.length > MAX_BODY) {
+          // Binary formats arrive base64-encoded. Without this the API could not
+          // accept a PDF or a .docx at all, so the extraction stage that exists to
+          // find white-on-white text in a PDF was unreachable over HTTP — the only
+          // way in was to call scan() in process.
+          if (typeof body.contentBase64 === "string") {
+            if (body.contentBase64.length > MAX_BODY * 2) {
+              return jsonError("content exceeds 1MB limit");
+            }
+            try {
+              body.content = new Uint8Array(Buffer.from(body.contentBase64, "base64"));
+            } catch {
+              return jsonError("contentBase64 is not valid base64");
+            }
+            if (body.content.byteLength === 0) {
+              return jsonError("contentBase64 decoded to an empty body");
+            }
+          } else if (!body.content || typeof body.content !== "string") {
+            return jsonError("content is required and must be a string, or contentBase64 for binary formats");
+          } else if (body.content.length > MAX_BODY) {
             return jsonError("content exceeds 1MB limit");
           }
           if (!body.source || !VALID_SOURCES.includes(body.source)) {
@@ -275,6 +290,12 @@ export async function startApiServer(port: number) {
               allowedHosts?: string[];
             };
           } catch { return jsonError("invalid JSON"); }
+
+          // Unvalidated, a missing or non-string content reached scanOutput, threw
+          // inside the regex pass, and the caller got a 500 with an HTML error page
+          // for what is a 400 — the same shapes /scan already rejects cleanly.
+          const invalid = validateOutputScanRequest(body);
+          if (invalid) return jsonError(invalid);
 
           return Response.json(scanOutput(body));
         },
