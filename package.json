@@ -1,6 +1,6 @@
 {
   "name": "@shivdev/agent-warden",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "bin": {
     "agent-warden": "./src/cli.ts",
     "warden": "./src/cli.ts"
@@ -11,6 +11,7 @@
     "policies/",
     "dashboard/",
     "redteam/",
+    "assets/",
     "README.md",
     "DEVELOPER.md",
     "DEPLOY.md"
