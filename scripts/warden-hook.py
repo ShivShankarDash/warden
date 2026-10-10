@@ -48,11 +48,12 @@ def extract_content(data: dict) -> tuple[str, str]:
             except (json.JSONDecodeError, ValueError):
                 return tool_input, tool_name
         if isinstance(tool_input, dict):
-            # Look for content-bearing fields in the input
-            for key in ("content", "body", "text", "url", "command"):
-                if key in tool_input:
-                    return str(tool_input[key]), tool_name
-            return json.dumps(tool_input), tool_name
+            # Send the full input JSON — Claude Code only sends tool_input
+            # in PostToolUse (not tool_output), and tools like Read, WebFetch,
+            # Bash carry substantial content in their input
+            full = json.dumps(tool_input)
+            if len(full) > 20:
+                return full, tool_name
 
     return "", tool_name
 
@@ -61,7 +62,7 @@ def scan(content: str, tool_name: str) -> dict | None:
     """Send content to Warden /scan and return the result."""
     payload = json.dumps({
         "content": content[:50000],
-        "source": "tool_result",
+        "source": "api_json",
         "agentId": f"hook-{tool_name}",
         "metadata": {"tool": tool_name, "hook": True}
     }).encode()

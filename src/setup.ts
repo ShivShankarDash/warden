@@ -46,16 +46,15 @@ def extract_content(data: dict) -> tuple:
             try: tool_input = json.loads(tool_input)
             except: return tool_input, tool_name
         if isinstance(tool_input, dict):
-            for key in ("content", "body", "text", "url", "command"):
-                if key in tool_input:
-                    return str(tool_input[key]), tool_name
-            return json.dumps(tool_input), tool_name
+            full = json.dumps(tool_input)
+            if len(full) > 20:
+                return full, tool_name
     return "", tool_name
 
 def scan(content: str, tool_name: str):
     payload = json.dumps({
         "content": content[:50000],
-        "source": "tool_result",
+        "source": "api_json",
         "agentId": "hook-" + tool_name,
         "metadata": {"tool": tool_name, "hook": True}
     }).encode()
