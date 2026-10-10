@@ -67,9 +67,14 @@ export async function extractEmail(content: string | Buffer): Promise<ExtractRes
     .filter(Boolean)
     .join("\n");
 
-  const hiddenText = [headerText, hiddenSections.map((s) => s.content).join("\n")]
-    .filter(Boolean)
-    .join("\n");
+  // Registered as a section rather than only folded into hiddenText. Downstream
+  // stages that work per section — the classifier scores each provenance segment on
+  // its own — can only see what provenance names, so a header block that existed
+  // solely inside the flattened hiddenText string would have gone back to being
+  // unscanned by the classifier, undoing the fix above.
+  if (headerText) hiddenSections.unshift({ type: "header_block", content: headerText });
+
+  const hiddenText = hiddenSections.map((s) => s.content).join("\n");
 
   // Fail closed. Content that isn't valid RFC822 parses to nothing, and passing an
   // empty extraction downstream means the scan sees no text and allows anything —
@@ -108,6 +113,10 @@ export async function extractEmail(content: string | Buffer): Promise<ExtractRes
   const raw = typeof content === "string" ? content : content.toString("utf8");
   const covered = visibleText.length + hiddenText.length;
   const underCovered = raw.trim().length > 0 && covered < raw.trim().length * 0.9;
+
+  // Same reason as the header block: the recovered raw text has to be named in
+  // provenance, not only appended to hiddenText, or per-section stages lose it.
+  if (underCovered) hiddenSections.push({ type: "undercovered_raw", content: raw });
 
   return {
     visibleText,

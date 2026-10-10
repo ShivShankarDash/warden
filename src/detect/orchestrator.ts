@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import type { ScanRequest, ScanResult, Finding, Action, SourceType } from "../types.ts";
-import { extract } from "../extract/index.ts";
+import { extract, textSegments, type TextSegment } from "../extract/index.ts";
 import { sniff, formatMismatch, isUnscannable } from "../extract/sniff.ts";
 import { decode } from "../decode/index.ts";
 import { applyRules, suspectsJailbreak } from "./rules.ts";
@@ -43,6 +43,94 @@ function dedupeByAttackType(findings: Finding[]): Finding[] {
     if (!existing || f.confidence > existing.confidence) byType.set(f.attackType, f);
   }
   return [...byType.values()];
+}
+
+interface SegmentClassification {
+  findings: Finding[];
+  benignScore: number | null;
+  injectionProbability: number;
+  usedLaya: boolean;
+}
+
+/**
+ * Run the classifier over each provenance segment and keep the worst result.
+ *
+ * Scoring the concatenation of every segment was producing findings that no segment
+ * justified on its own — see textSegments() for the measurement. Max over segments
+ * is the aggregation that matches what the stage is for: an injection hidden in PDF
+ * metadata still scores high on its own, and a benign producer string no longer
+ * drags the body up with it.
+ *
+ * Laya is tried for every segment first. The fallback to Prompt Guard 2 is decided
+ * once, on whether Laya answered for *any* segment, rather than per segment — a
+ * sidecar that is down is down for all of them, and mixing two models' probabilities
+ * into one max would make the score mean nothing.
+ */
+async function classifySegments(
+  segments: TextSegment[],
+  threshold: number
+): Promise<SegmentClassification> {
+  const empty: SegmentClassification = {
+    findings: [], benignScore: null, injectionProbability: 0, usedLaya: false,
+  };
+  if (!segments.length) return empty;
+
+  const layaResults = await Promise.all(
+    segments.map((s) =>
+      classifyWithLaya(s.content, threshold).catch(() => ({
+        findings: [] as Finding[], benignScore: null, injectionProbability: 0,
+      }))
+    )
+  );
+
+  const layaAnswered = layaResults.some(
+    (r) => !(r.injectionProbability === 0 && r.benignScore === null)
+  );
+
+  let results: { findings: Finding[]; benignScore: number | null }[];
+  if (layaAnswered) {
+    results = layaResults;
+  } else {
+    results = await Promise.all(
+      segments.map((s) =>
+        classify(s.content, threshold).catch(() => ({
+          findings: [] as Finding[], benignScore: null,
+        }))
+      )
+    );
+  }
+
+  // Worst segment wins. benignScore is the clearance the model gave that same
+  // segment, so the "classifier is hedging" check downstream reads the hedge about
+  // the riskiest part of the content rather than an average over all of it.
+  let worst = -1;
+  let worstScore = -1;
+  for (let i = 0; i < results.length; i++) {
+    const score = results[i].findings.length
+      ? Math.max(...results[i].findings.map((f) => f.confidence))
+      : 1 - (results[i].benignScore ?? 1);
+    if (score > worstScore) {
+      worstScore = score;
+      worst = i;
+    }
+  }
+  if (worst < 0) return empty;
+
+  const chosen = results[worst];
+  return {
+    // Name the segment in the reason: a reader of the trace has to be able to tell
+    // "the body said this" from "a hidden metadata field said this", and after this
+    // change the quoted probability belongs to a segment rather than to the scan.
+    findings: chosen.findings.map((f) => ({
+      ...f,
+      reason: `${f.reason} [segment: ${segments[worst].type}]`,
+    })),
+    benignScore: chosen.benignScore,
+    injectionProbability: layaAnswered
+      ? (layaResults[worst] as { injectionProbability: number }).injectionProbability
+      : 0,
+    usedLaya: layaAnswered,
+  };
 }
 
 function determineAction(
@@ -141,17 +229,37 @@ export async function scan(req: ScanRequest): Promise<ScanResult> {
     });
   }
 
+  const rawText =
+    typeof req.content === "string" ? req.content : new TextDecoder().decode(req.content);
+
   const fullText = extracted
     ? [extracted.visibleText, extracted.hiddenText].filter(Boolean).join("\n")
-    : typeof req.content === "string"
-    ? req.content
-    : new TextDecoder().decode(req.content);
+    : rawText;
+
+  // The classifier stage scores each provenance segment on its own instead of the
+  // blob above, because joining unrelated segments — a document title, its body, the
+  // producer string a PDF library writes into /Info — produces text the model reads
+  // as adversarial when no part of it is. See textSegments() for the numbers.
+  // Every other stage still works on the whole text: rules in particular are precise
+  // enough to want cross-segment visibility, and only the statistical stage is
+  // misled by the concatenation.
+  const segments: TextSegment[] = extracted
+    ? textSegments(extracted)
+    : rawText.trim()
+    ? [{ type: "body", content: rawText }]
+    : [];
 
   // Stage 2: Decode
   const t1 = performance.now();
   const decoded = decode(fullText);
   trace.push({ stage: "decode", ms: performance.now() - t1, skipped: false });
   const scanText = decoded.text;
+
+  // Each segment is decoded in its own right. Doing it before the split would mean
+  // decoding a blob and then guessing which segment each unwrapped region came from.
+  const scanSegments = segments
+    .map((s) => ({ type: s.type, content: decode(s.content).text }))
+    .filter((s) => s.content.trim().length > 0);
 
   // Stage 3: Rules
   // Run over the raw text too — decode() strips invisible Unicode and unwraps
@@ -173,20 +281,13 @@ export async function scan(req: ScanRequest): Promise<ScanResult> {
   if (ruleScore < HIGH_CONFIDENCE) {
     const t3 = performance.now();
 
-    // Try Laya first; fall back to Prompt Guard 2 if the sidecar is down.
-    const laya = await classifyWithLaya(scanText, CLASSIFIER_THRESHOLD).catch(
-      () => ({ findings: [] as Finding[], benignScore: null, injectionProbability: 0 })
-    );
+    // Try Laya first; fall back to Prompt Guard 2 if the sidecar is down. Both run
+    // per segment, with the worst segment carrying the verdict.
+    const laya = await classifySegments(scanSegments, CLASSIFIER_THRESHOLD);
 
-    let clf: { findings: Finding[]; benignScore: number | null };
-    if (laya.injectionProbability === 0 && laya.benignScore === null) {
-      // Laya unavailable — fall back to Prompt Guard 2.
-      clf = await classify(scanText, CLASSIFIER_THRESHOLD).catch(
-        () => ({ findings: [] as Finding[], benignScore: null })
-      );
-    } else {
+    const clf: { findings: Finding[]; benignScore: number | null } = laya;
+    if (laya.usedLaya) {
       // Laya responded — use its result.
-      clf = laya;
       usedLaya = true;
       // When Laya is confident, the judge adds latency without improving
       // accuracy. The base model's probabilities are well-calibrated (unlike
