@@ -33,6 +33,9 @@ export function reviewSummary(items: ReviewItem[], pendingTotal = items.length):
 }
 
 function card(it: ReviewItem): string {
+  // Roughly the clamp height in base.css. Only cards that are actually cut off get
+  // a toggle, so a two-line note does not carry a pointless button.
+  const longContent = it.content.length > 400 || it.content.split("\n").length > 6;
   const tier = tierOf(it.action);
   const color = token(TIERS.find((t) => t.key === tier)!.varName);
   const findings = it.findings.length
@@ -55,6 +58,7 @@ function card(it: ReviewItem): string {
       <div class="acts">
         <button class="act danger" data-decision="attack">Confirm attack</button>
         <button class="act ok" data-decision="safe">Mark safe</button>
+        ${longContent ? `<button class="act subtle" data-expand>Show more</button>` : ""}
         <span class="hint">Writes a human-origin entry straight to active memory.</span>
       </div>
     </article>`;
@@ -77,8 +81,17 @@ export function renderReviewPanel(
       <b>Nothing awaiting review.</b><br>
       Verdicts of HUMAN_REVIEW or QUARANTINE queue here — everything else is already decided.
     </div>`;
+    delete host.dataset.sig;
     return;
   }
+
+  // The dashboard refreshes every 15 seconds. Replacing innerHTML destroys the
+  // scroll container and drops the reader back to the top mid-read — so repaint only
+  // when the queue has actually changed, not merely because the clock ticked. A
+  // queue that is sitting still now stays exactly where the reader left it.
+  const sig = `${pendingTotal}:${items.map((i) => i.id).join(",")}`;
+  if (host.dataset.sig === sig) return;
+  const prevScroll = host.querySelector<HTMLElement>(".queue")?.scrollTop ?? 0;
 
   // Most urgent first; a tie falls back to the longest wait.
   const ordered = [...items].sort((a, b) => b.riskScore - a.riskScore || a.createdAt - b.createdAt);
@@ -93,9 +106,24 @@ export function renderReviewPanel(
        </div>`
     : "";
   host.innerHTML = `<div class="queue">${ordered.map(card).join("")}</div>${more}`;
+  host.dataset.sig = sig;
+
+  // A repaint that did happen (a decision landed, or a page was appended) should
+  // still not throw away where the reader was.
+  const queue = host.querySelector<HTMLElement>(".queue");
+  if (queue && prevScroll) queue.scrollTop = prevScroll;
 
   for (const btn of host.querySelectorAll<HTMLButtonElement>("button[data-decision]")) {
     btn.addEventListener("click", () => void decide(btn, onResolved));
+  }
+
+  // Long content is clamped rather than given its own scrollbar; this reveals it.
+  for (const btn of host.querySelectorAll<HTMLButtonElement>("button[data-expand]")) {
+    btn.addEventListener("click", () => {
+      const art = btn.closest<HTMLElement>(".rev")!;
+      const open = art.classList.toggle("expanded");
+      btn.textContent = open ? "Show less" : "Show more";
+    });
   }
 
   const moreBtn = host.querySelector<HTMLButtonElement>("#review-more");

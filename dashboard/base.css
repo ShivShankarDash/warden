@@ -616,9 +616,28 @@ table.dataview .scroller { max-height: 300px; overflow: auto; }
   background: var(--inset);
   font-family: var(--mono); font-size: 12px; line-height: 1.6; color: var(--ink-2);
   white-space: pre-wrap; word-break: break-word;
-  max-height: 190px; overflow: auto;
   border-bottom: 1px solid var(--line-soft);
+
+  /* Clamped, not scrollable. A scrollbar here sat inside the queue's own
+     scrollbar, so a wheel gesture over a card moved one list or the other
+     depending on where the pointer happened to be. One scroll region per view;
+     the Show more button reveals the rest. */
+  max-height: 150px; overflow: hidden;
+  position: relative;
 }
+/* Fade the clamp so a cut-off card reads as truncated rather than as finished. */
+.rev:not(.expanded) .content::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 42px;
+  background: linear-gradient(to bottom, transparent, var(--inset));
+  pointer-events: none;
+}
+.rev.expanded .content { max-height: none; }
+/* Sits beside the decision buttons; .hint keeps the margin-left:auto that pushes
+   it to the right edge. */
+.act.subtle {
+  background: transparent; border-color: transparent; color: var(--ink-3);
+}
+.act.subtle:hover { color: var(--ink); border-color: var(--line); }
 .rev .acts {
   display: flex; align-items: center; gap: 8px;
   padding: 11px 16px;
