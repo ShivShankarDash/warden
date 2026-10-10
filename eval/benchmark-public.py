@@ -40,7 +40,7 @@ except Exception as e:
     sys.exit(1)
 
 def scan(text, source="user_message", agent_id="benchmark"):
-    """Send text to Warden and return the result."""
+    """Send text to Warden using the benchmark policy (no judge = fast)."""
     headers = {"Content-Type": "application/json"}
     if API_KEY:
         headers["X-API-Key"] = API_KEY
@@ -166,10 +166,18 @@ def load_deepset():
         yield text, is_attack
 
 def load_notinject():
-    ds = load_dataset("leolee99/NotInject", split="train")
-    for row in ds:
-        text = str(row.get("text", row.get("prompt", row.get("content", "")))).strip()
-        yield text, False  # All benign
+    # NotInject has custom splits, not "train"
+    items = []
+    for split in ["NotInject_one", "NotInject_two", "NotInject_three"]:
+        try:
+            ds = load_dataset("leolee99/NotInject", split=split)
+            for row in ds:
+                text = str(row.get("text", row.get("prompt", row.get("content", "")))).strip()
+                if text:
+                    items.append((text, False))  # All benign
+        except:
+            pass
+    return items
 
 def load_antijection():
     ds = load_dataset("Antijection/prompt-injection-dataset-v1", split="train")
