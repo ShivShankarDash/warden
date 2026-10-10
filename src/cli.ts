@@ -12,6 +12,8 @@ Usage: agent-warden [command] [options]   (bunx @shivdev/agent-warden)
 
 Commands:
   (default)              Run the MCP gateway
+  setup                  Configure IDE hooks for full prompt-injection
+                         coverage (Kiro, Claude Code, Cursor)
   intel                  Fetch new attack examples from public threat feeds and
                          seed the ones this install misses into memory
   redteam                Probe this install for gaps with generated attacks
@@ -103,6 +105,13 @@ async function runSubcommand(relPath: string, label: string): Promise<never> {
     stdin: "inherit",
   });
   process.exit(await proc.exited);
+}
+
+if (args[0] === "setup") {
+  // Auto-configures IDE hooks so every tool call flows through Warden.
+  const { runSetup } = await import("./setup.ts");
+  await runSetup();
+  process.exit(0);
 }
 
 if (args[0] === "intel") {

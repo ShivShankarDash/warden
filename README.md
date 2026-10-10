@@ -103,7 +103,23 @@ Wait until you see the Warden banner. That means it is listening.
 > Short on time or disk? Add `WARDEN_NO_LAYA_INSTALL=1` in front of the command to
 > skip the 1.2 GB download. Warden still works, just catches fewer attacks.
 
-#### Step 3 — Teach it the latest attacks and probe for gaps
+#### Step 3 — Configure your IDEs (one command)
+
+```bash
+bunx @shivdev/agent-warden setup --global
+```
+
+This auto-detects which IDEs you have installed (Kiro, Claude Code, Cursor) and configures hooks so **every tool call** flows through Warden — not just MCP tools, but built-in tools like file reads, web fetches, and shell commands too.
+
+You can also target specific IDEs:
+
+```bash
+bunx @shivdev/agent-warden setup --kiro
+bunx @shivdev/agent-warden setup --claude-code
+bunx @shivdev/agent-warden setup --cursor
+```
+
+#### Step 4 — Teach it the latest attacks and probe for gaps
 
 Open a **second** terminal, leaving the first one running:
 
@@ -126,7 +142,7 @@ bunx @shivdev/agent-warden redteam
 
 Re-run either agent any time you want to strengthen your install.
 
-#### Step 4 — Point your editor at Warden
+#### Step 5 — Point your editor's MCP at Warden
 
 Open your editor's MCP settings file and replace your servers with this:
 
@@ -152,11 +168,11 @@ Open your editor's MCP settings file and replace your servers with this:
 - `--upstream-cmd` is whatever tool server you want protected. Repeat it for each one.
 - `WARDEN_URL` must stay as shown — it's what routes everything through the dashboard.
 
-#### Step 5 — Restart your editor
+#### Step 6 — Restart your editor
 
 Fully quit and reopen. Warden only loads at startup.
 
-#### Step 6 — Open the dashboard
+#### Step 7 — Open the dashboard
 
 ```
 http://localhost:3000
@@ -376,6 +392,9 @@ If Warden flags something legitimate, clear it on the dashboard — that teaches
 ```bash
 # Start Warden + dashboard
 bunx @shivdev/agent-warden --api-only --port 3000
+
+# Configure IDE hooks (Kiro, Claude Code, Cursor)
+bunx @shivdev/agent-warden setup --global
 
 # Threat Intel — pull the latest attacks from public threat feeds and learn what you miss
 bunx @shivdev/agent-warden intel

@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "hooks": {
+    "postToolUse": [
+      {
+        "command": "python3 /Users/shivshankardash/warden/scripts/warden-hook.py",
+        "matcher": "",
+        "timeout": 10
+      }
+    ]
+  }
+}
