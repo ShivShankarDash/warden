@@ -75,12 +75,13 @@ bunx @shivdev/agent-warden --api-only --port 3000
 ```
 
 > **Best results:** Set an LLM API key so the judge stage can arbitrate borderline
-> content. Add these to your shell profile or pass them before the command:
+> content. Pass them inline or export them in your shell profile:
 >
 > ```bash
-> export ANTHROPIC_API_KEY=sk-ant-...
-> # If your key is org-level (sk-ant-usr-…), also set:
-> export ANTHROPIC_WORKSPACE_ID=wrkspc_...
+> ANTHROPIC_API_KEY=sk-ant-... bunx @shivdev/agent-warden --api-only --port 3000
+>
+> # If your key is org-level (sk-ant-usr-…), also pass the workspace:
+> ANTHROPIC_API_KEY=sk-ant-... ANTHROPIC_WORKSPACE_ID=wrkspc_... bunx @shivdev/agent-warden --api-only --port 3000
 > ```
 >
 > OpenAI (`OPENAI_API_KEY`) and OpenRouter (`OPENROUTER_API_KEY`) keys work too.
