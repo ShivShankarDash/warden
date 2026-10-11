@@ -43,8 +43,10 @@ def verify_public(url: str) -> None:
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
             body = r.read(200_000).decode("utf-8", "ignore")
-            needs_login = "accounts.google.com/ServiceLogin" in body or "Sign in" in body[:5000] and "drive" in url
-            print(f"verify: HTTP {r.status}, {'LOGIN WALL' if needs_login else 'publicly reachable'}")
+            # A public Drive/YouTube page carries the file or video title; a private one redirects to sign-in.
+            title = body.split("<title>", 1)[-1].split("</title>", 1)[0] if "<title>" in body else ""
+            public = bool(title) and "sign in" not in title.lower() and "accounts.google.com" not in r.geturl()
+            print(f"verify: HTTP {r.status}, title '{title}' -> {'publicly reachable' if public else 'LOGIN WALL'}")
     except Exception as e:  # noqa: BLE001
         print(f"verify failed: {e}")
 
@@ -55,6 +57,8 @@ def drive(remote: str, folder: str) -> None:
     if SRT.exists():
         subprocess.run(["rclone", "copy", str(SRT), dest], check=True)
     link = subprocess.run(["rclone", "link", f"{dest}/{FINAL.name}"], capture_output=True, text=True, check=True).stdout.strip()
+    if "open?id=" in link:  # the /file/d/<id>/view form opens the player directly
+        link = f"https://drive.google.com/file/d/{link.split('open?id=')[1]}/view"
     print(f"Drive link (anyone with the link can view): {link}")
     (ROOT / "build" / "final" / "PUBLISHED.txt").write_text(f"drive {link}\n")
     verify_public(link)
