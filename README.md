@@ -27,7 +27,7 @@ Warden sits between an AI agent and everything it reads: web pages, PDFs, Word f
 |---|---|
 | **Problem statement** | 2. Agentic Cybersecurity, Prompt Injection Firewall |
 | **Self-assessed position** | **F3 × D2.** All 9 attack types detected, high demonstrated reliability on text, and 10 of 11 input sources supported. [Justification](#self-assessment-f3--d2) |
-| **Working demo** | Video: _add link here_ · [Reproduce it yourself](#reproduce-the-demo) |
+| **Working demo** | [▶️ Watch the Product Demo](https://drive.google.com/file/d/1hXWgEyANw8rS08cx4y8QJlTuGmyaXqXg/view?usp=drive_link) · [Reproduce it yourself](#reproduce-the-demo) |
 | **Architecture** | [Diagram, process flow, decisions, model usage](#architecture) |
 | **Evidence** | Raw benchmark counts in [`eval/benchmark-results/`](eval/benchmark-results/), 551 tests in [`tests/`](tests/), specs in [`specs/`](specs/) |
 | **Ships as** | Published npm package [`@shivdev/agent-warden`](https://www.npmjs.com/package/@shivdev/agent-warden): MCP gateway, IDE hooks, HTTP API, live dashboard |
