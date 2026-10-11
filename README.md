@@ -98,6 +98,10 @@ The first run downloads three things:
 
 Wait until you see the Warden banner. That means it is listening.
 
+<p align="center">
+  <img src="assets/warden-banner-terminal.png" alt="Warden banner in terminal" width="700">
+</p>
+
 > Short on time or disk? Add `WARDEN_NO_LAYA_INSTALL=1` in front of the command to
 > skip the 1.2 GB download. Warden still works, just catches fewer attacks.
 
@@ -122,16 +126,16 @@ bunx @shivdev/agent-warden setup --cursor
 
 #### Step 4 — Teach it the latest attacks and probe for gaps
 
-Open a **second** terminal, leaving the first one running:
+Once the Warden banner is up and running (as shown above), open a **second** terminal and run these one at a time:
 
 ```bash
-# Threat Intel agent — pulls real prompt-injection examples from public
-# security datasets, tests each one against your install, and memorises
-# anything it misses. Run this first.
+# 1. Threat Intel — pulls real prompt-injection examples from public
+#    security datasets, tests each one against your install, and memorises
+#    anything it misses. Run this first.
 bunx @shivdev/agent-warden intel
 
-# Red Team agent — mutates known attacks (rewording, encoding, splitting)
-# and probes your install for gaps.
+# 2. Red Team — mutates known attacks (rewording, encoding, splitting)
+#    and probes your install for gaps. Needs the API server running.
 bunx @shivdev/agent-warden redteam
 ```
 
@@ -142,6 +146,11 @@ bunx @shivdev/agent-warden redteam
 | `selfplay` (source repo) | An LLM attacker invents new attacks aimed at Warden's weakest spots; the defender learns every bypass. Needs `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` or `OPENROUTER_API_KEY` |
 
 Re-run any of them whenever you want to strengthen your install.
+
+> **Note:** Both `intel` and `redteam` are one-shot commands — they run, finish, and exit.
+> You don't need to keep them running. The Warden server (Step 2) is the only process
+> that stays running. After a few `intel` + `redteam` cycles, Warden's memory is
+> trained on your environment and catches significantly more.
 
 #### Step 5 — Point your editor's MCP at Warden
 
