@@ -1,0 +1,40 @@
+{
+  "timestamp": "2026-10-10T23:22:02Z",
+  "script": "eval/benchmark-public.py",
+  "policy": "policies/benchmark.yaml (LLM judge disabled)",
+  "detected_actions": ["BLOCK", "QUARANTINE", "HUMAN_REVIEW", "SANITIZE"],
+  "sampling": "first N rows of each dataset's train split, in published order",
+  "datasets": {
+    "deepset/prompt-injections": {
+      "tp": 105, "fp": 14, "tn": 329, "fn": 52,
+      "total": 500, "errors": 0, "total_ms": 24549.784392999718
+    },
+    "NotInject (all benign)": {
+      "tp": 0, "fp": 43, "tn": 296, "fn": 0,
+      "total": 339, "errors": 0, "total_ms": 94599.18162199948
+    },
+    "Antijection/eval-suite": {
+      "tp": 258, "fp": 0, "tn": 164, "fn": 78,
+      "total": 500, "errors": 0, "total_ms": 53209.48975199973
+    },
+    "neuralchemy/PromptSentinel": {
+      "tp": 203, "fp": 47, "tn": 160, "fn": 90,
+      "total": 500, "errors": 0, "total_ms": 30372.37379899458
+    },
+    "xTRam1/safe-guard": {
+      "tp": 123, "fp": 10, "tn": 335, "fn": 32,
+      "total": 500, "errors": 0, "total_ms": 109152.30078900116
+    },
+    "hse-llm/prompt-injections": {
+      "tp": 0, "fp": 0, "tn": 0, "fn": 0,
+      "total": 0, "errors": 0, "total_ms": 0,
+      "note": "dataset failed to load; excluded from totals"
+    }
+  },
+  "totals": {
+    "tp": 689, "fp": 114, "tn": 1284, "fn": 252, "n": 2339,
+    "accuracy": 0.8435, "precision": 0.8580, "recall": 0.7322,
+    "false_positive_rate": 0.0815, "avg_ms": 133.3
+  },
+  "elapsed_s": 363.2
+}
