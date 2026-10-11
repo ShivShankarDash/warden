@@ -1,0 +1,14 @@
+# generated media and caches (rebuild with the commands in README.md)
+build/
+.venv/
+.env
+/node_modules
+/hf/
+motion/mc/node_modules/
+motion/mc/output/
+motion/hf/assets/*.mp4
+motion/hf/renders/
+motion/hf/snapshots/
+__pycache__/
+motion/hf/assets/fonts/
+motion/mc/public/fonts/

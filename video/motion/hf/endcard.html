@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=1920, height=1080" />
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+<link rel="stylesheet" href="brand.css" />
+<style>
+  #wrap { position: absolute; inset: 0; display: grid; grid-template-columns: 1fr 1fr; align-items: center; padding: 0 140px; gap: 80px; }
+  .left .word { display: flex; align-items: center; gap: 26px; }
+  .left .h1 { font-size: 120px; }
+  .left .lede { margin-top: 26px; font-size: 34px; max-width: 700px; }
+  .left .thanks { margin-top: 64px; font: 600 30px/1 var(--sans); color: var(--ink); }
+  .right { display: flex; flex-direction: column; gap: 22px; }
+  .step { padding: 26px 30px; }
+  .step .k { font: 600 19px/1 var(--sans); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin-bottom: 14px; }
+  .step .c { font: 500 27px/1.35 var(--mono); color: var(--ink); white-space: nowrap; }
+  .step .c .p { color: var(--blue-l); margin-right: 14px; }
+  .links { display: flex; flex-direction: column; gap: 12px; margin-top: 10px; font: 500 26px/1.3 var(--mono); color: var(--blue-l); }
+  .links span { color: var(--muted); font-family: var(--sans); font-size: 20px; letter-spacing: .1em; text-transform: uppercase; margin-right: 16px; }
+</style>
+</head>
+<body>
+<div id="root" data-composition-id="endcard" data-start="0" data-duration="10.5" data-width="1920" data-height="1080">
+  <div class="stage clip" data-start="0" data-duration="10.5">
+    <div class="bg"></div><div class="grid"></div>
+    <div id="wrap">
+      <div class="left">
+        <div class="word">
+          <svg class="mark" id="mark" viewBox="0 0 120 136"><defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3b8ae6"/><stop offset="1" stop-color="#1d5fae"/></linearGradient></defs>
+            <path d="M60 4 L110 22 Q112 23 112 26 L110 70 Q106 106 60 132 Q14 106 10 70 L8 26 Q8 23 10 22 Z" fill="url(#g)" stroke="#86b6ef" stroke-width="3"/>
+            <text x="60" y="88" text-anchor="middle" font-family="Inter Display" font-weight="700" font-size="58" fill="#fff">W</text></svg>
+          <div class="h1">Warden</div>
+        </div>
+        <div class="lede">A careful reader between your AI and everything it reads. Open source, local, and about five minutes to install.</div>
+        <div class="thanks" id="thanks">Thank you for your attention.</div>
+      </div>
+      <div class="right">
+        <div class="step card"><div class="k">1 · Install Bun</div><div class="c"><span class="p">❯</span>curl -fsSL https://bun.sh/install | bash</div></div>
+        <div class="step card"><div class="k">2 · Start Warden</div><div class="c"><span class="p">❯</span>bunx @shivdev/agent-warden --api-only</div></div>
+        <div class="step card"><div class="k">3 · Protect your IDE</div><div class="c"><span class="p">❯</span>bunx @shivdev/agent-warden setup --global</div></div>
+        <div class="links" id="links">
+          <div><span>GitHub</span>github.com/ShivShankarDash/warden</div>
+          <div><span>npm</span>@shivdev/agent-warden</div>
+        </div>
+      </div>
+    </div>
+    <div class="grain"></div>
+  </div>
+</div>
+<script>
+  const tl = gsap.timeline({ paused: true, defaults: { ease: "power3.out" } });
+  const END = 10.5;
+  tl.fromTo("#mark", { scale: .5, opacity: 0, rotate: -10 }, { scale: 1, opacity: 1, rotate: 0, duration: .8, ease: "back.out(1.7)" }, .1)
+    .fromTo(".left .h1", { opacity: 0, x: -20 }, { opacity: 1, x: 0, duration: .8 }, .3)
+    .fromTo(".left .lede", { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: .7 }, .7)
+    .fromTo(".step", { opacity: 0, x: 40 }, { opacity: 1, x: 0, duration: .6, stagger: .22 }, .9)
+    .fromTo("#links", { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: .6 }, 1.8)
+    .fromTo("#thanks", { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: .7 }, 3.6)
+    .to("#wrap", { scale: 1.02, duration: END, ease: "none" }, 0)
+    .to("#wrap", { opacity: 0, duration: .9, ease: "power2.in" }, END - .9);
+  window.__timelines = window.__timelines || {};
+  window.__timelines["endcard"] = tl;
+  tl.seek(0);
+</script>
+</body>
+</html>

@@ -99,6 +99,12 @@ def extract_file_path(data: dict) -> str | None:
         return None
 
     path = tool_input.get("path") or tool_input.get("file_path") or ""
+    # Kiro CLI sends tool_name "read" with {"operations": [{"mode": "Line", "path": ...}]}
+    if not path and isinstance(tool_input.get("operations"), list):
+        for op in tool_input["operations"]:
+            if isinstance(op, dict) and isinstance(op.get("path"), str):
+                path = op["path"]
+                break
     if not path:
         return None
 

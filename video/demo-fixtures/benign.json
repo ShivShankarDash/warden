@@ -1,0 +1,5 @@
+{
+  "source": "user_message",
+  "agentId": "inbox-assistant",
+  "content": "Please ignore my previous email, I attached the wrong invoice. The correct one is below."
+}

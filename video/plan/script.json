@@ -1,0 +1,79 @@
+{
+  "title": "Warden: a firewall for AI agents",
+  "voice": {
+    "persona": "A university professor giving a well-prepared guest lecture: warm, unhurried, curious, precise. Full sentences that breathe. Never salesy.",
+    "gemini_voice": "Charon",
+    "pace_wpm": 150
+  },
+  "style_rules": [
+    "Narrate like a university professor. Explain, then show.",
+    "No short punchy fragments, no rhetorical one-word sentences, no 'Here's the thing'.",
+    "Keep numbers rare: one figure per section at most, spoken as words where possible.",
+    "No hype words: revolutionary, game-changing, seamless, supercharge, unleash.",
+    "No em-dash cadence, no lists of three adjectives."
+  ],
+  "sections": [
+    {
+      "id": "intro",
+      "name": "Introduction",
+      "lines": [
+        { "tag": "[warmly]", "text": "Good afternoon. Today's subject is a quiet weakness in the AI assistants we now trust with our inboxes, our documents and our terminals." },
+        { "tag": "[thoughtful]", "text": "I would like to show you where that weakness comes from, and then walk you through Warden, an open-source tool that was built to close it." }
+      ]
+    },
+    {
+      "id": "problem",
+      "name": "Problem Overview",
+      "lines": [
+        { "tag": "[curious]", "text": "The difficulty is this. A language model reads everything as text, and it has no reliable way of telling information apart from instruction." },
+        { "tag": "[serious]", "text": "So if a web page, an email or a shared file contains a sentence addressed to the assistant, the assistant may simply obey it, as though you had typed it yourself." },
+        { "tag": "[measured]", "text": "Researchers call this prompt injection, and it becomes far more serious once we allow agents to send mail, run commands and touch real systems on our behalf." }
+      ]
+    },
+    {
+      "id": "demo",
+      "name": "Live Product Demonstration",
+      "lines": [
+        { "tag": "[brightly]", "text": "Let us see Warden at work. It runs on Bun, and the entire installation is a single command, which downloads the detection models and starts a local service with its own dashboard." },
+        { "tag": "", "text": "A second command connects it to your editor. Here we wire it into Kiro, so that every tool call the agent makes passes through Warden first." },
+        { "tag": "[intrigued]", "text": "Now consider an ordinary looking email about an invoice. Hidden inside an HTML comment is an instruction to forward every invoice to an outside address. Warden blocks it, and names the techniques it found." },
+        { "tag": "[reassuring]", "text": "A harmless note that merely contains the word ignore is allowed through, which matters just as much, because a firewall that cries wolf is soon switched off." },
+        { "tag": "[leaning in]", "text": "The more telling case is an agent doing real work. We ask Kiro to summarise a vendor file that carries a planted command. Warden's hook intercepts the read before the content ever reaches the model, and the agent explains to the user exactly what happened." },
+        { "tag": "", "text": "All of this is recorded in the dashboard: the volume of traffic, the kinds of attack arriving from each source, the path each decision took, and a live feed in which any verdict can be opened and explained." }
+      ]
+    },
+    {
+      "id": "ai",
+      "name": "AI Capabilities",
+      "lines": [
+        { "tag": "[explaining]", "text": "Underneath, Warden works as a sequence of increasingly careful readers. Fast rules recognise the familiar phrasings in several languages, and a decoder unwraps instructions that have been hidden inside encodings such as base sixty-four." },
+        { "tag": "", "text": "A local classifier judges the subtler cases, a memory of past attacks recognises variations it has met before, and an optional language model judge is consulted only for the genuinely borderline ones." },
+        { "tag": "[pleased]", "text": "Two agents keep it current. One gathers new attacks from public research, and the other deliberately attacks Warden in order to find its blind spots." }
+      ]
+    },
+    {
+      "id": "features",
+      "name": "Key Features",
+      "lines": [
+        { "tag": "", "text": "Beyond the scanner, Warden can stand in front of MCP servers and strip out poisoned tool descriptions. It also watches what the model sends back out, so that secrets cannot be smuggled away inside a link." },
+        { "tag": "[warmly]", "text": "And anything uncertain goes to a review queue, where a person's decision becomes part of Warden's memory." }
+      ]
+    },
+    {
+      "id": "impact",
+      "name": "Business Impact",
+      "lines": [
+        { "tag": "[confident]", "text": "For an organisation the argument is fairly simple. Detection runs on your own hardware, so sensitive content never leaves the building, and most decisions are settled in milliseconds without paying for a model call." },
+        { "tag": "", "text": "On public benchmarks it classifies roughly five samples in every six correctly, and that is with the language model judge switched off entirely." }
+      ]
+    },
+    {
+      "id": "closing",
+      "name": "Closing Summary",
+      "lines": [
+        { "tag": "[reflective]", "text": "To summarise: our assistants cannot yet distinguish what they read from what they are told, and Warden places a careful reader in between." },
+        { "tag": "[warmly]", "text": "It is open source, it takes about five minutes to install, and I would encourage you to try it on your own agents. Thank you for your attention." }
+      ]
+    }
+  ]
+}

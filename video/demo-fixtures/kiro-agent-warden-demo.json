@@ -1,0 +1,11 @@
+{
+  "name": "warden-demo",
+  "description": "Demo agent protected by the Warden PreToolUse hook",
+  "tools": ["fs_read"],
+  "allowedTools": ["fs_read"],
+  "hooks": {
+    "preToolUse": [
+      { "matcher": "*", "command": "WARDEN_URL=http://localhost:3000 python3 /Users/shivshankardash/warden/.claude/worktrees/demo-video/scripts/warden-prefetch.py" }
+    ]
+  }
+}
