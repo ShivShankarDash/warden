@@ -74,6 +74,19 @@ Open a terminal. **Leave this one running** — it is Warden itself.
 bunx @shivdev/agent-warden --api-only --port 3000
 ```
 
+> **Best results:** Set an LLM API key so the judge stage can arbitrate borderline
+> content. Add these to your shell profile or pass them before the command:
+>
+> ```bash
+> export ANTHROPIC_API_KEY=sk-ant-...
+> # If your key is org-level (sk-ant-usr-…), also set:
+> export ANTHROPIC_WORKSPACE_ID=wrkspc_...
+> ```
+>
+> OpenAI (`OPENAI_API_KEY`) and OpenRouter (`OPENROUTER_API_KEY`) keys work too.
+> Without a key, everything except the judge runs locally — still effective,
+> but the judge catches the trickiest attacks that slip past other stages.
+
 The first run downloads three things:
 
 | What | Size | Why |
@@ -574,7 +587,9 @@ bunx @shivdev/agent-warden --help                   # every option
 
 | Environment variable | Default | What it does |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | — | Enables the judge (check 6). `OPENAI_API_KEY` and `OPENROUTER_API_KEY` also work |
+| `ANTHROPIC_API_KEY` | — | Enables the LLM judge (check 6) — the final arbiter for borderline content. `OPENAI_API_KEY` and `OPENROUTER_API_KEY` also work. **Without a key Warden still works** — every other check runs locally — but adding one gives the best results |
+| `ANTHROPIC_WORKSPACE_ID` | — | Required if your Anthropic key is org-level (`sk-ant-usr-…`). Workspace-scoped keys don't need it |
+| `JUDGE_MODEL` | `claude-haiku-4-5-20251001` | Which model the judge uses. Any Anthropic, OpenAI, or OpenRouter model works |
 | `WARDEN_URL` | `http://localhost:3000` | Where the gateway and hooks report to |
 | `WARDEN_FAIL_MODE` | `closed` | If Warden is unreachable, the gateway blocks (`closed`) or lets content through (`open`) |
 | `WARDEN_API_KEYS` | — | Require an API key on write routes |
