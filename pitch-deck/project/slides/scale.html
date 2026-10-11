@@ -1,41 +1,35 @@
 <section id="scale" data-transition="fade" style="background:#F5F4EF;color:#111315;font-family:'Geist', Arial, sans-serif;padding:128px 128px 160px;display:flex;flex-direction:column;justify-content:space-between">
 <div style="display:flex;flex-direction:column;gap:20px">
 <p style="font-family:'Geist Mono', 'Courier New', monospace;font-size:24px;letter-spacing:3px;text-transform:uppercase;color:#B8441A">Scalability</p>
-<h2 style="font-size:72px;font-weight:600;line-height:1.1;letter-spacing:-2px">Built to get cheaper and smarter as traffic grows.</h2>
+<h2 style="font-size:72px;font-weight:600;line-height:1.1;letter-spacing:-2px">Traffic grows. The on-prem bill doesn't.</h2>
 </div>
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:40px 72px">
-<div style="display:flex;gap:28px">
-<x-icon name="Lightning" style="color:#C2491D;width:48px;height:48px"></x-icon>
-<div style="flex:1;display:flex;flex-direction:column;gap:8px">
-<h3 style="font-size:32px;font-weight:600;line-height:1.25">Cost cascade</h3>
-<p style="font-size:28px;line-height:1.45;color:#4F535A">Cheap checks first. Each confirmed attack is caught next time in ~1ms instead of ~1.5s.</p>
+<table style="font-size:28px;color:#111315">
+<tr><th style="width:22%;text-align:left">Scans / month</th><th style="width:28%;text-align:right">Cloud LLM on every scan</th><th style="width:28%;text-align:right">Warden + judge</th><th style="width:22%;text-align:right">Warden on-prem</th></tr>
+<tr><td>1 million</td><td style="text-align:right">~$2,750</td><td style="text-align:right">~$580</td><td style="text-align:right;color:#B8441A">$0</td></tr>
+<tr><td>10 million</td><td style="text-align:right">~$27,500</td><td style="text-align:right">~$5,800</td><td style="text-align:right;color:#B8441A">$0</td></tr>
+<tr><td>100 million</td><td style="text-align:right">~$275,000</td><td style="text-align:right">~$58,000</td><td style="text-align:right;color:#B8441A">$0</td></tr>
+</table>
+<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:32px">
+<div style="display:flex;flex-direction:column;gap:8px;border-top:2px solid #111315;padding:24px 0 0 0">
+<h3 style="font-size:32px;font-weight:600;line-height:1.25">~21%</h3>
+<p style="font-size:24px;line-height:1.45;color:#4F535A">of scans reach the judge. The rest clear locally.</p>
 </div>
+<div style="display:flex;flex-direction:column;gap:8px;border-top:2px solid #111315;padding:24px 0 0 0">
+<h3 style="font-size:32px;font-weight:600;line-height:1.25">6.4 scans/s</h3>
+<p style="font-size:24px;line-height:1.45;color:#4F535A">per process. Add processes to scale out.</p>
 </div>
-<div style="display:flex;gap:28px">
-<x-icon name="Code" style="color:#C2491D;width:48px;height:48px"></x-icon>
-<div style="flex:1;display:flex;flex-direction:column;gap:8px">
-<h3 style="font-size:32px;font-weight:600;line-height:1.25">Plain HTTP API</h3>
-<p style="font-size:28px;line-height:1.45;color:#4F535A">Scan input, scan output, check a tool call, vet a document. Any agent can plug in.</p>
+<div style="display:flex;flex-direction:column;gap:8px;border-top:2px solid #111315;padding:24px 0 0 0">
+<h3 style="font-size:32px;font-weight:600;line-height:1.25">1.25 GB</h3>
+<p style="font-size:24px;line-height:1.45;color:#4F535A">one-time install. Plain HTTP API for any agent.</p>
 </div>
-</div>
-<div style="display:flex;gap:28px">
-<x-icon name="Settings" style="color:#C2491D;width:48px;height:48px"></x-icon>
-<div style="flex:1;display:flex;flex-direction:column;gap:8px">
-<h3 style="font-size:32px;font-weight:600;line-height:1.25">Policy per agent</h3>
-<p style="font-size:28px;line-height:1.45;color:#4F535A">One small YAML file sets allowed tools and strictness. No code changes.</p>
-</div>
-</div>
-<div style="display:flex;gap:28px">
-<x-icon name="Trust" style="color:#C2491D;width:48px;height:48px"></x-icon>
-<div style="flex:1;display:flex;flex-direction:column;gap:8px">
-<h3 style="font-size:32px;font-weight:600;line-height:1.25">Learns safely</h3>
-<p style="font-size:28px;line-height:1.45;color:#4F535A">New memories wait on probation. Threat-intel and red-team agents find gaps on their own.</p>
-</div>
+<div style="display:flex;flex-direction:column;gap:8px;border-top:2px solid #111315;padding:24px 0 0 0">
+<h3 style="font-size:32px;font-weight:600;line-height:1.25">~1ms</h3>
+<p style="font-size:24px;line-height:1.45;color:#4F535A">to catch a repeat attack. Memory learns safely.</p>
 </div>
 </div>
 <div style="position:absolute;left:128px;bottom:64px;width:1664px;display:flex;justify-content:space-between">
-<p style="font-family:'Geist Mono', 'Courier New', monospace;font-size:24px;color:#8A8E95">Warden</p>
+<p style="font-family:'Geist Mono', 'Courier New', monospace;font-size:24px;color:#8A8E95">Estimate: Claude Haiku 4.5 judge, ~$0.0028 per call. Hardware not included.</p>
 <p style="font-family:'Geist Mono', 'Courier New', monospace;font-size:24px;color:#8A8E95">10</p>
 </div>
-<aside>Scale works in our favour. The more attacks Warden sees, the more of them are caught by the one-millisecond memory instead of the slow judge, so cost per scan falls. The API is a set of simple HTTP routes, so it fits any agent stack. Policies are per agent, so one install serves many assistants. Learning is guarded: a new memory sits inert until it is independently seen again, and only a human can mark something as safe, which stops attackers from poisoning it. The intel agent pulls public threat feeds, and the red-team agent generates new attack variants to probe for gaps.</aside>
+<aside>The cost table assumes a Claude Haiku 4.5 judge at about 2,000 input and 150 output tokens per call, roughly 0.28 cents. A cloud model on every scan costs 2,750 dollars a month at a million scans. Warden sends only about 21 percent of scans to the judge, measured on our 10K benchmark run, so the same traffic costs about 580 dollars. Fully on-prem with the judge off, API cost is zero at any volume. Moving the judge to Claude Haiku 5.5 would cut the middle column about ten times. Throughput: 2,339 samples in 363 seconds on one process, about 6.4 scans a second or 550 thousand a day. Policies are one YAML file per agent, and new memories sit on probation until seen again, so the system can't be poisoned. Hardware cost is not included.</aside>
 </section>
