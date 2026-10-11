@@ -13,6 +13,10 @@
 
 [Install](#install) · [Grid position](#self-assessment-f3--d2) · [Architecture](#architecture) · [Demo](#see-it-work) · [Benchmark](#benchmark)
 
+https://github.com/user-attachments/assets/warden-product-demo.mp4
+
+<video src="https://raw.githubusercontent.com/ShivShankarDash/warden/main/assets/warden-product-demo.mp4" width="100%" controls></video>
+
 </div>
 
 ---
