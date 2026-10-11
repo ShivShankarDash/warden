@@ -1,0 +1,30 @@
+<section id="solution" data-transition="fade" style="background:#F5F4EF;color:#111315;font-family:'Geist', Arial, sans-serif;padding:128px 128px 160px;display:flex;flex-direction:column;justify-content:space-between">
+<div style="display:flex;flex-direction:column;gap:20px">
+<p style="font-family:'Geist Mono', 'Courier New', monospace;font-size:24px;letter-spacing:3px;text-transform:uppercase;color:#B8441A">Solution</p>
+<h2 style="font-size:72px;font-weight:600;line-height:1.1;letter-spacing:-2px">Warden sits between your agent and everything it reads.</h2>
+</div>
+<div style="display:flex;align-items:center;gap:40px">
+<div style="display:flex;flex-direction:column;gap:12px;width:340px">
+<p style="font-family:'Geist Mono', 'Courier New', monospace;font-size:28px;padding:16px 24px;border:1px solid #CFCDC5;border-radius:12px">web page</p>
+<p style="font-family:'Geist Mono', 'Courier New', monospace;font-size:28px;padding:16px 24px;border:1px solid #CFCDC5;border-radius:12px">file</p>
+<p style="font-family:'Geist Mono', 'Courier New', monospace;font-size:28px;padding:16px 24px;border:1px solid #CFCDC5;border-radius:12px">email</p>
+<p style="font-family:'Geist Mono', 'Courier New', monospace;font-size:28px;padding:16px 24px;border:1px solid #CFCDC5;border-radius:12px">tool result</p>
+</div>
+<x-shape kind="arrow-right" style="background:#111315;width:96px;height:48px"></x-shape>
+<div style="flex:1;display:flex;flex-direction:column;gap:16px;background:#C2491D;color:#F5F4EF;border-radius:20px;padding:48px">
+<h3 style="font-size:56px;font-weight:600;line-height:1.1">Warden</h3>
+<p style="font-size:28px;line-height:1.45">Scans what goes in. Checks what comes out. Learns from what it misses.</p>
+</div>
+<x-shape kind="arrow-right" style="background:#111315;width:96px;height:48px"></x-shape>
+<div style="display:flex;flex-direction:column;gap:12px;width:300px;background:#111315;color:#EDECE6;border-radius:20px;padding:40px">
+<h3 style="font-size:40px;font-weight:600;line-height:1.2">Your AI</h3>
+<p style="font-size:24px;line-height:1.4;color:#9EA3AA">Sees only clean data.</p>
+</div>
+</div>
+<p style="font-size:32px;line-height:1.4;color:#4F535A;width:1500px">Runs on your machine. One command wires it into Claude Code, Cursor and Kiro, covering every tool call, not just MCP.</p>
+<div style="position:absolute;left:128px;bottom:64px;width:1664px;display:flex;justify-content:space-between">
+<p style="font-family:'Geist Mono', 'Courier New', monospace;font-size:24px;color:#8A8E95">Warden</p>
+<p style="font-family:'Geist Mono', 'Courier New', monospace;font-size:24px;color:#8A8E95">04</p>
+</div>
+<aside>Warden is a proxy. Content passes through it before the model sees it, and the model's actions pass through it before they happen. Bad sentences are cut out, poisoned tools are removed from the list entirely, and personal data is redacted. It runs locally, so nothing is uploaded.</aside>
+</section>

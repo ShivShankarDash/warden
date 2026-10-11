@@ -1,0 +1,33 @@
+<section id="demo" data-transition="fade" style="background:#111315;color:#EDECE6;font-family:'Geist', Arial, sans-serif;padding:128px 128px 160px;display:flex;flex-direction:column;justify-content:space-between">
+<div style="display:flex;flex-direction:column;gap:20px">
+<p style="font-family:'Geist Mono', 'Courier New', monospace;font-size:24px;letter-spacing:3px;text-transform:uppercase;color:#F27B4B">Product demo</p>
+<h2 style="font-size:72px;font-weight:600;line-height:1.1;letter-spacing:-2px">Four real moments from the terminal.</h2>
+</div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:24px">
+<div style="display:flex;flex-direction:column;gap:12px;background:#1C1F23;border:1px solid #2C3036;border-radius:16px;padding:32px 36px">
+<p style="font-size:28px;font-weight:600">A note gives orders</p>
+<p style="font-family:'Geist Mono', 'Courier New', monospace;font-size:24px;line-height:1.5;color:#F27B4B">read_notes → BLOCK · 0.95 · 4ms</p>
+<p style="font-size:24px;line-height:1.45;color:#9EA3AA">Never reaches the model.</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:12px;background:#1C1F23;border:1px solid #2C3036;border-radius:16px;padding:32px 36px">
+<p style="font-size:28px;font-weight:600">A tool is booby-trapped</p>
+<p style="font-family:'Geist Mono', 'Courier New', monospace;font-size:24px;line-height:1.5;color:#F27B4B">get_weather → BLOCKED · 0.92 · 13ms</p>
+<p style="font-size:24px;line-height:1.45;color:#9EA3AA">Removed from the tool list, not just flagged.</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:12px;background:#1C1F23;border:1px solid #2C3036;border-radius:16px;padding:32px 36px">
+<p style="font-size:28px;font-weight:600">Personal data appears</p>
+<p style="font-family:'Geist Mono', 'Courier New', monospace;font-size:24px;line-height:1.5;color:#8FC1E3">lookup_customer → ALLOW · 4 redacted</p>
+<p style="font-size:24px;line-height:1.45;color:#9EA3AA">Email, phone, SSN and card masked. Work goes on.</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:12px;background:#1C1F23;border:1px solid #2C3036;border-radius:16px;padding:32px 36px">
+<p style="font-size:28px;font-weight:600">It only looks suspicious</p>
+<p style="font-family:'Geist Mono', 'Courier New', monospace;font-size:24px;line-height:1.5;color:#8FC1E3">"ignore my previous email" → ALLOW · 3ms</p>
+<p style="font-size:24px;line-height:1.45;color:#9EA3AA">Read in context. No false alarm.</p>
+</div>
+</div>
+<div style="position:absolute;left:128px;bottom:64px;width:1664px;display:flex;justify-content:space-between">
+<p style="font-family:'Geist Mono', 'Courier New', monospace;font-size:24px;color:#8A8E95">Warden</p>
+<p style="font-family:'Geist Mono', 'Courier New', monospace;font-size:24px;color:#8A8E95">07</p>
+</div>
+<aside>Live demo order. One: ask the assistant to summarise notes that hide an instruction to send the SSH key to an attacker. Warden blocks it at stage three in four milliseconds. Two: a weather tool's description tells the model to email the whole conversation to an attacker. The tool disappears from the list. Three: a customer lookup returns personal data. Warden redacts it and the answer still works. Four: a harmless email that says "ignore my previous email" goes straight through. Then open the dashboard at localhost:3000 to show the live trace of each decision.</aside>
+</section>
