@@ -113,7 +113,13 @@ Wait until you see the Warden banner. That means it is listening.
 bunx @shivdev/agent-warden setup --global
 ```
 
-This auto-detects which IDEs you have installed (Kiro, Claude Code, Cursor) and adds a hook that scans **every tool result** — not just MCP tools, but built-in file reads, web fetches, and shell commands too. When a result contains an attack, the model is warned not to follow it.
+This auto-detects which IDEs you have installed and wires every door each one exposes. The three disagree about how a hook reports a block, so Warden speaks each dialect:
+
+| IDE | Blocks before the tool runs | Reports after the tool runs | User sees a message |
+|---|---|---|---|
+| **Claude Code** | `PreToolUse` → `permissionDecision: deny` | `PostToolUse` → `decision: block` | ✅ via `systemMessage` |
+| **Cursor** | `beforeShellExecution`, `beforeReadFile`, `beforeMCPExecution` → `permission: deny` | `postToolUse` → `additional_context` | ✅ via `user_message` |
+| **Kiro** | `PreToolUse` → exit 2 + stderr | `PostToolUse` — dashboard only ([#7417](https://github.com/kirodotdev/Kiro/issues/7417)) | ⚠️ relayed by the model |
 
 You can also target specific IDEs:
 
@@ -123,8 +129,11 @@ bunx @shivdev/agent-warden setup --claude-code
 bunx @shivdev/agent-warden setup --cursor
 ```
 
-> Want the attack **blocked before it ever reaches the model**? Add the
-> [pre-fetch hook](#optional--block-before-the-tool-runs) as well.
+> **Kiro is the one gap.** Its `PostToolUse` event discards hook output and
+> cannot block, so detections on tools outside the pre-scan matcher reach the
+> dashboard but not the editor. Routing tool servers through the
+> [MCP gateway](#step-5--point-your-editors-mcp-at-warden) closes it — the
+> gateway replaces the tool result itself, so a block is always visible.
 
 #### Step 4 — Teach it the latest attacks and probe for gaps
 
@@ -192,36 +201,16 @@ http://localhost:3000
 
 It updates live as your assistant works. **Setup is done.**
 
-#### Optional — Block before the tool runs
+#### Blocking before the tool runs
 
-`scripts/warden-prefetch.py` fetches the URL or reads the file **before** the tool runs. If Warden says BLOCK, QUARANTINE or HUMAN_REVIEW, the tool never runs and the model is told why. It covers web fetches, `curl`/`wget` in shell commands, and file reads. Clone this repo, then add:
+The pre-scan hook fetches the URL or reads the file **before** the tool runs. If Warden says BLOCK, QUARANTINE or HUMAN_REVIEW, the tool never runs and the model is told why. It covers web fetches, `curl`/`wget` in shell commands, and document reads.
 
-**Claude Code** — `.claude/settings.json`
+**All three IDEs get this automatically** from `setup` (step 3) — no action needed. The script lands at `~/.warden/hooks/prefetch.py`, and setup registers it against whichever pre-tool events your IDE supports.
 
-```json
-{
-  "hooks": {
-    "PreToolUse": [{
-      "matcher": "WebFetch|Bash|Read",
-      "hooks": [{ "type": "command", "command": "python3 /path/to/warden/scripts/warden-prefetch.py", "timeout": 20 }]
-    }]
-  }
-}
-```
-
-**Kiro** — `.kiro/hooks/warden-prefetch.json`
-
-```json
-{
-  "version": "v1",
-  "hooks": [{
-    "name": "Warden Pre-Scan",
-    "trigger": "PreToolUse",
-    "matcher": "web_fetch|WebFetch|execute_bash|read_file|read_code",
-    "action": { "type": "command", "command": "python3 /path/to/warden/scripts/warden-prefetch.py", "timeout": 20 }
-  }]
-}
-```
+> **Note:** the pre-scan reads documents, not source files — `.txt`, `.md`,
+> `.html`, `.pdf`, `.docx`, `.eml` and similar. Code, `.env`, `node_modules/`
+> and IDE config are skipped deliberately, so a repo full of security test
+> fixtures does not block every read.
 
 ---
 
@@ -561,7 +550,32 @@ Five public prompt-injection datasets — **2,339 samples**, LLM judge off (`pol
 | neuralchemy/PromptSentinel | 72.6% | 81.2% | 69.3% | 22.7% | 61 | 500 |
 | **Total** | **84.4%** | **85.8%** | **73.2%** | **8.2%** | **133** | **2,339** |
 
-- **Method.** First 500 rows of each train split, in published order. BLOCK, QUARANTINE, HUMAN_REVIEW and SANITIZE count as detected. Raw counts: [`eval/benchmark-results/public-2026-10-10.json`](eval/benchmark-results/public-2026-10-10.json).
+### Real documents, not dataset samples
+
+The table above measures short, prompt-shaped samples. An IDE feeds Warden something
+else: multi-kilobyte READMEs, changelogs and source files. Measured separately on 220
+package READMEs from `node_modules` (benign) against 181 curated attacks:
+
+| | Before | After |
+|---|---|---|
+| False positives on real documents | 85.0% | **0.0%** |
+| Recall on the attack corpus | 62.0% | **75.1%** |
+
+```bash
+bun run eval:fp --limit 220          # needs Warden running
+```
+
+Five causes, each measured and fixed: a base64 rule that matched URL path segments;
+the classifier scoring markdown link definitions that contain no prose; the classifier
+convicting alone on long-form documents it was not calibrated for; a zero-width rule
+firing on emoji joiners; and the judge being told that any stripped encoding layer was
+"strong evidence of smuggling" when emoji and byte-order marks are stripped from
+ordinary files routinely. A sixth, the worst, was a feedback loop: a misread document
+became a stored attack, the next document matched it by embedding, and that match then
+counted as independent corroboration — which is why a lived-in database measured 85%
+where a clean one measured 43%.
+
+- **Method.** First 500 rows of each train split, in published order. BLOCK, QUARANTINE, HUMAN_REVIEW and SANITIZE count as detected. Raw counts: [`eval/benchmark-results/public-2026-10-10.json`](eval/benchmark-results/public-2026-10-10.json). The five-dataset table was measured on 2026-10-10 and predates the detection changes above; the document audit is the current figure.
 - **Honest gaps.** Recall is 73%: about a quarter of attacks pass the local checks, which is what the judge is for. False positives are high on NotInject (built from trigger words) and PromptSentinel. A third-party classifier we use may have seen some of these datasets in training.
 - **Reproduce.** With Warden running, `python3 eval/benchmark-public.py`.
 

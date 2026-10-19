@@ -85,6 +85,9 @@ async function classifySegments(
   const empty: SegmentClassification = {
     findings: [], benignScore: null, injectionProbability: 0, usedLaya: false,
   };
+  // Segments with no sentence in them are not scoreable by a prose model. Dropping
+  // them here rather than discounting them later also saves the sidecar call.
+  segments = segments.filter((s) => hasScorableProse(s.content));
   if (!segments.length) return empty;
 
   const layaResults = await Promise.all(
@@ -142,8 +145,65 @@ async function classifySegments(
       ? (layaResults[worst] as { injectionProbability: number }).injectionProbability
       : 0,
     usedLaya: layaAnswered,
+    worstSegmentType: segments[worst].type,
+    worstSegmentChars: segments[worst].content.length,
   };
 }
+
+/**
+ * Length past which a visible `body` segment is prose rather than a prompt.
+ *
+ * Measured on 100 package READMEs: the classifier returned >0.9 on 83 of them,
+ * including files whose entire content is a title, one sentence and CI badges.
+ * It is calibrated on prompt-shaped text and does not transfer to long-form
+ * documents, which is most of what an IDE actually reads.
+ */
+const PROSE_SEGMENT_CHARS = 600;
+
+/**
+ * Visible long-form prose is the one place the classifier may not convict alone.
+ *
+ * This deliberately does not weaken detection where the classifier is reliable:
+ * hidden sections (HTML comments, white-on-white text, metadata) are segments of
+ * their own and keep full weight, as does anything prompt-shaped. An injection
+ * written openly into a long document still has the rules stage, which reads the
+ * whole text, plus similarity and the judge.
+ */
+function isDocumentShaped(
+  segmentType: string | undefined,
+  chars: number | undefined,
+  source?: SourceType
+): boolean {
+  // Content that arrived as a document is the distribution the classifier was not
+  // calibrated on, whatever the segment's size. A 180-char package README scored
+  // 0.98 just as readily as a 2,000-char one, so length alone was the wrong test.
+  if (source && INDIRECT_SOURCES.includes(source)) return true;
+  return segmentType === "body" && (chars ?? 0) >= PROSE_SEGMENT_CHARS;
+}
+
+/**
+ * Does this segment contain enough natural language for a prose classifier to judge?
+ *
+ * Markdown extraction lifts link reference definitions, image URLs and inline HTML
+ * into segments of their own. A definition like
+ *   [npm-image]: https://img.shields.io/npm/v/ajv.svg
+ * is punctuation and a URL — no sentence at all — and Laya scored exactly these
+ * 0.998 across 15 of 60 package READMEs. The model has nothing to read, so its
+ * output is noise. URLs still face the decoder, the rules stage and the
+ * exfiltration checks, which are the right tools for a URL.
+ */
+export function hasScorableProse(content: string): boolean {
+  const withoutUrls = content.replace(/\b[a-z][a-z0-9+.-]*:\/\/\S+/gi, " ");
+  const words = withoutUrls.match(/[A-Za-z]{3,}/g) ?? [];
+  return words.length >= 5;
+}
+
+/**
+ * Ceiling for an uncorroborated classifier hit on prose: below SANITIZE (0.3), so
+ * the content passes but is spotlit as untrusted rather than withheld. Corroboration
+ * from rules, similarity or the judge is unaffected and still blocks.
+ */
+const PROSE_CLASSIFIER_CAP = 0.29;
 
 function determineAction(
   riskScore: number,
@@ -288,6 +348,9 @@ export async function scan(req: ScanRequest): Promise<ScanResult> {
   // Stage 4: Classifier (Laya primary, Prompt Guard 2 fallback)
   let classifierScore = 0;
   let benignScore: number | null = null;
+  /** True when the classifier's verdict came from long visible prose, where it is
+   *  not reliable enough to convict without corroboration. */
+  let classifierOnProse = false;
   let layaSkipJudge = false;
   /** Set when layaSkipJudge came from a confident-benign score rather than a
    *  confident-attack one. Only this half is overridable by a structural referral. */
@@ -316,7 +379,7 @@ export async function scan(req: ScanRequest): Promise<ScanResult> {
       // than one softened false positive. The residual cost is that a confidently
       // wrong Laya score cannot be appealed; see the known-limitations note in
       // DEVELOPER.md.
-      if (laya.injectionProbability > 0.85) {
+      if (laya.injectionProbability > 0.85 && !isDocumentShaped(laya.worstSegmentType, laya.worstSegmentChars, req.source)) {
         layaSkipJudge = true;  // confident attack — skip judge
       } else if (laya.injectionProbability < 0.15 && ruleScore < 0.3) {
         layaSkipJudge = true;  // confident benign AND rules agree — skip judge
@@ -335,7 +398,25 @@ export async function scan(req: ScanRequest): Promise<ScanResult> {
     findings.push(...clf.findings);
     benignScore = clf.benignScore;
     classifierScore = clf.findings.length ? Math.max(...clf.findings.map((f) => f.confidence)) : 0;
-    trace.push({ stage: "classifier", ms: performance.now() - t3, score: classifierScore, skipped: false });
+
+    // Cap an uncorroborated hit on long-form prose. The score still travels — it
+    // reaches the judge and the trace — but on its own it can no longer withhold a
+    // document. Anything the rules or similarity stages also saw is untouched.
+    classifierOnProse = isDocumentShaped(laya.worstSegmentType, laya.worstSegmentChars, req.source);
+    if (classifierOnProse && classifierScore > PROSE_CLASSIFIER_CAP) {
+      trace.push({
+        stage: "classifier",
+        ms: performance.now() - t3,
+        score: classifierScore,
+        skipped: false,
+        error:
+          `prose_cap: ${classifierScore.toFixed(2)} -> ${PROSE_CLASSIFIER_CAP} — classifier-only hit on a ` +
+          `${laya.worstSegmentChars}-char visible body; needs corroboration to withhold`,
+      });
+      classifierScore = PROSE_CLASSIFIER_CAP;
+    } else {
+      trace.push({ stage: "classifier", ms: performance.now() - t3, score: classifierScore, skipped: false });
+    }
   } else {
     trace.push({ stage: "classifier", ms: 0, skipped: true });
   }
@@ -640,9 +721,17 @@ export async function scan(req: ScanRequest): Promise<ScanResult> {
   //
   // Deliberately excluded: findings from the similarity stage itself, which would be
   // circular — memory confirming memory, with drift and no outside signal.
+  //
+  // Also excluded: a classifier score that was capped as uncorroborated prose. Left
+  // in, it closed a loop that doubled the false-positive rate — a misread document
+  // became a stored "attack", the next similar document matched it by embedding, and
+  // the match was then counted as independent corroboration. Measured at 43% of
+  // benign documents flagged on a clean database against 85% on the lived-in one.
+  // A capped score is explicitly not enough to convict, so it is not enough to teach.
   const learnable = findings.find(
     (f) =>
-      (f.stage === "rules" || f.stage === "classifier") && f.confidence >= LEARN_THRESHOLD
+      (f.stage === "rules" || (f.stage === "classifier" && !classifierOnProse)) &&
+      f.confidence >= LEARN_THRESHOLD
   );
   if (learnable && SEVERITY[action] >= SEVERITY.QUARANTINE) {
     void addReference(scanText, learnable.attackType, req.source, {

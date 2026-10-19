@@ -1,6 +1,6 @@
 {
   "name": "@shivdev/agent-warden",
-  "version": "0.4.4",
+  "version": "0.5.0",
   "bin": {
     "agent-warden": "./src/cli.ts",
     "warden": "./src/cli.ts"
@@ -11,6 +11,7 @@
     "policies/",
     "dashboard/",
     "redteam/",
+    "scripts/warden-prefetch.py",
     "eval/cases/*.json",
     "assets/banner-v2.png",
     "README.md",
@@ -21,6 +22,7 @@
     "dev": "bun --hot src/api/index.ts",
     "eval": "bun eval/runner.ts",
     "test": "DB_PATH=./warden-test.db bun test",
+    "eval:fp": "bun eval/fp-audit.ts",
     "eval:session": "bun eval/sessions.ts",
     "eval:similarity": "bun eval/similarity.ts",
     "test:clean": "rm -f warden-test.db && DB_PATH=./warden-test.db bun test",

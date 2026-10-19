@@ -18,7 +18,56 @@ type RuleSpec = {
    * or above 0.25 so it still feeds the session tracker and still refers to the judge.
    */
   directConfidence?: number;
+  /**
+   * Optional second opinion on a match, for patterns broad enough to need one.
+   * Returning false discards that span as if the pattern had never matched.
+   * A rule with no validator behaves exactly as before.
+   */
+  validate?: (match: string, text: string, index: number) => boolean;
 };
+
+/**
+ * A zero-width joiner between two pictographs is an emoji, not smuggled text.
+ *
+ * `🙅‍♂️` is one grapheme built with U+200D, and it appears in ordinary prose —
+ * it was the sole reason a package README was held for review. Every other
+ * zero-width character, and a ZWJ anywhere else, still flags.
+ */
+function notEmojiJoiner(match: string, text: string, index: number): boolean {
+  if (match !== "‍") return true;
+  const prev = [...text.slice(Math.max(0, index - 2), index)].pop() ?? "";
+  const next = [...text.slice(index + 1, index + 3)][0] ?? "";
+  const pictographic = /\p{Extended_Pictographic}|\p{Emoji_Modifier}|️/u;
+  return !(pictographic.test(prev) && pictographic.test(next));
+}
+
+/**
+ * Is this run of base64 characters actually encoded text, or just a URL path?
+ *
+ * The pattern includes `/`, so it spans slashes and matched things like
+ * `net/coveralls/c/github/jshttp/accepts/master` — every CI badge in every
+ * README. Decoding settles it: real encoded instructions decode to printable
+ * text, a URL path decodes to bytes that are mostly unprintable.
+ */
+function decodesToText(match: string, text: string, index: number): boolean {
+  // Inside a URL, a long alphanumeric run is a path or a hash, not a payload.
+  const before = text.slice(Math.max(0, index - 12), index);
+  if (/https?:\/\/\S*$/.test(before) || /[?&=][^\s]*$/.test(before)) return false;
+
+  // Padding-free base64 of ASCII is a multiple of 4 once padded; a path is not.
+  const cleaned = match.replace(/=+$/, "");
+  if (cleaned.length % 4 !== 0) return false;
+
+  try {
+    const decoded = Buffer.from(cleaned, "base64").toString("utf-8");
+    if (decoded.length < 8) return false;
+    const printable = (decoded.match(/[\x20-\x7e\s]/g) ?? []).length / decoded.length;
+    // Decoded English runs ~1.0 printable; a decoded URL path lands well below.
+    return printable >= 0.9;
+  } catch {
+    return false;
+  }
+}
 
 // ── Rule definitions ─────────────────────────────────────────────────────────
 // Ordered loosely by specificity. Confidence reflects how unambiguous the pattern is.
@@ -319,12 +368,14 @@ const RULES: RuleSpec[] = [
     attackType: "encoded_instructions",
     confidence: 0.55,
     reason: "Long base64-like string — possible encoded instruction",
+    validate: decodesToText,
   },
   {
     pattern: /[​-‍⁠﻿­]/,
     attackType: "encoded_instructions",
     confidence: 0.72,
     reason: "Zero-width / invisible Unicode character — ASCII smuggling vector",
+    validate: notEmojiJoiner,
   },
   {
     pattern: /\uDB40[\uDC00-\uDC7F]/,
@@ -343,7 +394,12 @@ const RULES: RuleSpec[] = [
   {
     pattern: /\[\s*.{0,80}\s*\]:\s*https?:\/\/[^\s]+\?[^\s]*(?:data|text|q|content|session|token)=/i,
     attackType: "tool_abuse",
-    confidence: 0.85,
+    // Supporting evidence, not proof. A reference link with a `q=` or `query=`
+    // parameter is also every bundle-size and shields.io badge in every README —
+    // five of them were the last false positives left. Below HUMAN_REVIEW on its
+    // own, so the real EchoLeak payload (which always carries instruction text
+    // too) still escalates, while a badge cannot withhold a document by itself.
+    confidence: 0.45,
     reason: "Markdown reference-style link with data query param — EchoLeak vector",
   },
   {
@@ -1160,7 +1216,8 @@ export function applyRules(text: string, source: SourceType = "user_message"): F
   const isDirect = source === "user_message";
 
   for (const rule of RULES) {
-    const spans = findSpans(text, rule.pattern);
+    let spans = findSpans(text, rule.pattern);
+    if (rule.validate) spans = spans.filter((s) => rule.validate!(s.text, text, s.start));
     if (!spans.length) continue;
 
     const confidence =

@@ -10,3 +10,6 @@ venv/
 *.log
 eval/cases/corpus.jsonl
 .kiro/hooks/
+__pycache__/
+.claude/
+.kiro/
